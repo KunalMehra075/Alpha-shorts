@@ -1,0 +1,88 @@
+{
+  "_comment": "Caption style presets. Colors are hex (#RRGGBB). 'strokeColor'/'strokeWidth' = the text outline (e.g. black stroke). 'position' is one of top|center|bottom. Sizes/paddings are in pixels relative to a 1080x1920 canvas. English presets: hormozi, tiktok, minimal. Hindi/Devanagari presets: hindi, hindi-minimal (use the 'Noto Sans Devanagari' font). The active preset is chosen automatically by LANGUAGE (captions.byLanguage in default.json); override with captions.activeStyle or the CAPTION_STYLE env var. Any preset may add an 'animation' object to override the global default in default.json, e.g. \"animation\": { \"enter\": \"fade\", \"exit\": \"none\" } (enter/exit: pop|fade|slide|none).",
+
+  "hormozi": {
+    "fontFamily": "Arial Black",
+    "fontSize": 130,
+    "textColor": "#FFFFFF",
+    "highlightColor": "#FFE100",
+    "strokeColor": "#000000",
+    "strokeWidth": 8,
+    "shadowColor": "#000000",
+    "shadowBlur": 6,
+    "position": "center",
+    "bottomPadding": 0,
+    "lineSpacing": 20,
+    "maxWordsPerLine": 4,
+    "uppercase": true,
+    "bold": true
+  },
+
+  "tiktok": {
+    "fontFamily": "Arial",
+    "fontSize": 100,
+    "textColor": "#FFFFFF",
+    "highlightColor": "#00F2EA",
+    "strokeColor": "#000000",
+    "strokeWidth": 6,
+    "shadowColor": "#000000",
+    "shadowBlur": 3,
+    "position": "bottom",
+    "bottomPadding": 380,
+    "lineSpacing": 16,
+    "maxWordsPerLine": 5,
+    "uppercase": false,
+    "bold": true
+  },
+
+  "minimal": {
+    "fontFamily": "Helvetica",
+    "fontSize": 84,
+    "textColor": "#FFFFFF",
+    "highlightColor": "#FFFFFF",
+    "strokeColor": "#000000",
+    "strokeWidth": 2,
+    "shadowColor": "#000000",
+    "shadowBlur": 0,
+    "position": "bottom",
+    "bottomPadding": 420,
+    "lineSpacing": 12,
+    "maxWordsPerLine": 6,
+    "uppercase": false,
+    "bold": false
+  },
+
+  "hindi": {
+    "fontFamily": "Noto Sans Devanagari",
+    "fontSize": 104,
+    "textColor": "#FFFFFF",
+    "highlightColor": "#FFE100",
+    "strokeColor": "#000000",
+    "strokeWidth": 7,
+    "shadowColor": "#000000",
+    "shadowBlur": 5,
+    "position": "center",
+    "bottomPadding": 0,
+    "lineSpacing": 40,
+    "maxWordsPerLine": 4,
+    "uppercase": false,
+    "bold": true
+  },
+
+  "hindi-minimal": {
+    "fontFamily": "Noto Sans Devanagari",
+    "fontSize": 80,
+    "textColor": "#FFFFFF",
+    "highlightColor": "#00F2EA",
+    "strokeColor": "#000000",
+    "strokeWidth": 3,
+    "shadowColor": "#000000",
+    "shadowBlur": 2,
+    "position": "bottom",
+    "bottomPadding": 420,
+    "lineSpacing": 30,
+    "maxWordsPerLine": 5,
+    "uppercase": false,
+    "bold": false
+  }
+}

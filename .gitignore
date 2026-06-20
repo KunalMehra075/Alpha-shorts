@@ -1,0 +1,39 @@
+node_modules/
+.env
+
+# Raw input videos (can be large) and generated artifacts
+raw-videos/*
+generated-audio/*
+generated-subtitles/*
+caption-overlays/*
+logs/*
+
+# Automated video generation: cache, staged assets, rendered output
+cache/*
+output/*
+music/*
+assets/library/*
+remotion/public/*
+
+# Keep the folders themselves in git
+!raw-videos/.gitkeep
+!generated-audio/.gitkeep
+!generated-subtitles/.gitkeep
+!caption-overlays/.gitkeep
+!logs/.gitkeep
+!cache/.gitkeep
+!cache/videos/.gitkeep
+!cache/images/.gitkeep
+!output/.gitkeep
+!music/.gitkeep
+!assets/library/.gitkeep
+
+# Dashboard (web + server) build + data
+workspaces/*
+!workspaces/.gitkeep
+dashboard/node_modules/
+dashboard/dist/
+server/node_modules/
+
+# OS noise
+.DS_Store

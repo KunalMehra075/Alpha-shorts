@@ -1,0 +1,70 @@
+import { buildMessages, parseScript } from './prompt';
+import type { ScriptInput, ScriptResult, ScriptStrategy } from './types';
+
+/**
+ * Base strategy for any OpenAI-compatible Chat Completions API (OpenAI, DeepSeek,
+ * and most others share the exact same request/response shape). Concrete
+ * providers only supply a name, base URL, model and API key.
+ */
+export abstract class OpenAICompatStrategy implements ScriptStrategy {
+  abstract readonly name: string;
+  protected abstract readonly baseUrl: string;
+  protected abstract model(): string;
+  protected abstract apiKey(): string | undefined;
+
+  protected timeoutMs = 60_000;
+
+  isAvailable(): boolean {
+    return !!this.apiKey();
+  }
+
+  async generate(input: ScriptInput): Promise<ScriptResult> {
+    const key = this.apiKey();
+    if (!key) throw new Error(`${this.name}: API key not configured`);
+
+    const { system, user } = buildMessages(input);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${key}`
+        },
+        body: JSON.stringify({
+          model: this.model(),
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user }
+          ],
+          temperature: 0.85,
+          max_tokens: 2000,
+          response_format: { type: 'json_object' }
+        })
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = await res.text();
+      } catch {
+        /* ignore */
+      }
+      throw new Error(`${this.name} HTTP ${res.status} ${res.statusText}${detail ? `: ${detail.slice(0, 300)}` : ''}`);
+    }
+
+    const data: any = await res.json();
+    const content: string = data?.choices?.[0]?.message?.content ?? '';
+    if (!content.trim()) throw new Error(`${this.name}: empty response`);
+
+    const { voiceoverScript, scenes } = parseScript(content);
+    return { voiceoverScript, scenes, provider: this.name };
+  }
+}

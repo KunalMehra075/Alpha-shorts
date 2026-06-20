@@ -1,0 +1,54 @@
+{
+  "name": "shorts-generator",
+  "version": "1.0.0",
+  "description": "Automate YouTube Shorts narration audio (ElevenLabs) and transparent karaoke caption overlays (Whisper + FFmpeg).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "convert-va": "node src/convert-va.js",
+    "gen-audio": "node src/gen-audio.js",
+    "gen-audio:hi": "node src/gen-audio.js -hi",
+    "gen-audio:en": "node src/gen-audio.js -en",
+    "gen-caption": "node src/gen-caption.js",
+    "gen-caption:hi": "node src/gen-caption.js -hi",
+    "gen-caption:en": "node src/gen-caption.js -en",
+    "gen-caption:green": "node src/gen-caption.js --green",
+    "gen-caption:green:hi": "node src/gen-caption.js --green -hi",
+    "generate-video": "node src/generate-video.js",
+    "studio": "remotion studio",
+    "setup": "node src/setup.js",
+    "doctor": "node src/doctor.js",
+    "cleanup": "node src/cleanup.js",
+    "dash": "concurrently -n server,web -c red,gray \"npm:dash:server\" \"npm:dash:web\"",
+    "dash:server": "npm --prefix server start",
+    "dash:web": "npm --prefix dashboard run dev",
+    "dash:install": "npm --prefix server install && npm --prefix dashboard install",
+    "dash:build": "npm --prefix dashboard run build"
+  },
+  "keywords": [
+    "youtube",
+    "shorts",
+    "elevenlabs",
+    "whisper",
+    "ffmpeg",
+    "captions",
+    "subtitles",
+    "tts"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/cli": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "dotenv": "^16.4.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0"
+  }
+}

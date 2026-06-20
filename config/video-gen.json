@@ -1,0 +1,35 @@
+{
+  "render": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "codec": "h264",
+    "crf": 18,
+    "imageFormat": "jpeg"
+  },
+  "transitions": {
+    "durationMs": 500,
+    "types": ["fade", "zoom", "slide-left", "slide-right"]
+  },
+  "assets": {
+    "providers": ["library", "pexels", "pixabay"],
+    "perKeywordResults": 15,
+    "videoMaxDurationSec": 60,
+    "downloadTimeoutMs": 60000,
+    "scoring": {
+      "videoBonus": 40,
+      "portraitBonus": 60,
+      "landscapeBonus": 25,
+      "squareBonus": 10,
+      "relevanceWeight": 12,
+      "resolutionWeight": 8,
+      "popularityWeight": 6,
+      "libraryBonus": 100
+    }
+  },
+  "music": {
+    "enabled": false,
+    "track": "",
+    "volume": 0.12
+  }
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "start": 0,
+    "end": 3,
+    "spokenLine": "Your brain has more connections than there are stars in the galaxy.",
+    "visualType": "Video",
+    "searchKeywords": ["brain neurons animation", "synapse network"]
+  },
+  {
+    "start": 3,
+    "end": 6,
+    "spokenLine": "But have you ever wondered why we forget?",
+    "visualType": "Animation",
+    "searchKeywords": ["question mystery"]
+  },
+  {
+    "start": 6,
+    "end": 9,
+    "spokenLine": "Ancient sages knew the answer long before modern science.",
+    "visualType": "SplitScreen",
+    "searchKeywords": ["ancient temple meditation", "modern laboratory science"]
+  },
+  {
+    "start": 9,
+    "end": 12,
+    "spokenLine": "Memory is not storage. It is reconstruction.",
+    "visualType": "Image",
+    "searchKeywords": ["galaxy stars space"]
+  }
+]

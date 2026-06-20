@@ -1,0 +1,49 @@
+{
+  "language": "en",
+  "elevenlabs": {
+    "modelId": "eleven_multilingual_v2",
+    "voiceId": "xctasy8XvGp2cVO9HL9k",
+    "outputFormat": "mp3_44100_128",
+    "voiceSettings": {
+      "stability": 0.5,
+      "similarityBoost": 0.75,
+      "style": 0.0,
+      "useSpeakerBoost": true
+    }
+  },
+  "whisper": {
+    "bin": "whisper",
+    "model": "",
+    "modelByLanguage": {
+      "en": "base",
+      "hi": "small"
+    },
+    "language": ""
+  },
+  "video": {
+    "ffmpegBin": "ffmpeg",
+    "ffprobeBin": "ffprobe",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "background": "transparent",
+    "greenColor": "#00FF00",
+    "greenCrf": 18,
+    "codec": "prores_ks",
+    "proresProfile": "4444",
+    "pixelFormat": "yuva444p10le"
+  },
+  "captions": {
+    "activeStyle": "",
+    "byLanguage": {
+      "en": "hormozi",
+      "hi": "hindi"
+    },
+    "animation": {
+      "enter": "pop",
+      "exit": "pop",
+      "enterDuration": 120,
+      "exitDuration": 90
+    }
+  }
+}
