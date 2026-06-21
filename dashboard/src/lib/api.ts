@@ -132,11 +132,8 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(body)
     }),
-  renderCaptionOverlay: (id: string, background: 'transparent' | 'greenscreen') =>
-    request<CaptionOverlay>(`/workspaces/${id}/caption/render`, {
-      method: 'POST',
-      body: JSON.stringify({ background })
-    }),
+  renderCaptionOverlay: (id: string) =>
+    request<CaptionOverlay>(`/workspaces/${id}/caption/render`, { method: 'POST' }),
 
   // templates
   listTemplates: () => request<PromptTemplate[]>('/prompt-templates'),

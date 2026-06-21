@@ -65,7 +65,8 @@ export const CaptionSettings = z.object({
   strokeColor: z.string().default('#000000'),
   strokeWidth: z.number().default(6),
   highlightColor: z.string().default('#E11D2A'),
-  position: z.enum(['top', 'center', 'bottom']).default('center'),
+  // Vertical position only: 0 = top, 100 = bottom.
+  positionY: z.number().min(0).max(100).default(78),
   uppercase: z.boolean().default(true)
 });
 export type CaptionSettings = z.infer<typeof CaptionSettings>;
@@ -93,10 +94,11 @@ export const CaptionsState = z.object({
     .default({}),
   overlay: z
     .object({
-      file: z.string(),
-      background: z.enum(['transparent', 'greenscreen']),
+      createdAt: z.string(),
       durationSec: z.number(),
-      createdAt: z.string()
+      hasAudio: z.boolean().default(false),
+      normal: z.object({ file: z.string(), sizeBytes: z.number() }).nullable().default(null),
+      green: z.object({ file: z.string(), sizeBytes: z.number() }).nullable().default(null)
     })
     .nullable()
     .default(null)
@@ -121,6 +123,9 @@ export const Manifest = z.object({
     script: Stage,
     audio: Stage,
     caption: Stage,
+    // Added after the original 5 stages — default so pre-existing manifests
+    // (which lack `assets`) still parse.
+    assets: Stage.default({ status: 'not_started' }),
     video: Stage,
     upload: Stage
   }),
@@ -167,6 +172,7 @@ export function emptyStages(): Manifest['stages'] {
     script: { status: 'not_started' },
     audio: { status: 'not_started' },
     caption: { status: 'not_started' },
+    assets: { status: 'not_started' },
     video: { status: 'not_started' },
     upload: { status: 'not_started' }
   };

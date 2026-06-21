@@ -184,6 +184,7 @@ export function buildAss(words, style, video) {
     shadowColor,
     shadowBlur = 0,
     position = 'bottom',
+    positionY, // optional 0-100 (0 = top, 100 = bottom). Overrides `position`.
     bottomPadding = 0,
     lineSpacing = 0,
     uppercase = false,
@@ -226,7 +227,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     const blockHeight = numLines * fontSize + (numLines - 1) * lineSpacing;
 
     let blockTop;
-    if (position === 'top') {
+    if (typeof positionY === 'number') {
+      // 0 = top, 100 = bottom. Keep a safe vertical margin at both edges.
+      const margin = Math.round(height * 0.08);
+      const avail = Math.max(0, height - 2 * margin - blockHeight);
+      const frac = Math.min(100, Math.max(0, positionY)) / 100;
+      blockTop = Math.round(margin + avail * frac);
+    } else if (position === 'top') {
       blockTop = bottomPadding; // bottomPadding doubles as top padding
     } else if (position === 'center') {
       blockTop = Math.round((height - blockHeight) / 2);

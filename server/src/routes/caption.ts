@@ -19,9 +19,6 @@ const SaveBody = z.object({
   lines: z.array(CaptionLine)
 });
 
-const RenderBody = z.object({
-  background: z.enum(['transparent', 'greenscreen']).default('transparent')
-});
 
 // GET current caption state
 captionRouter.get(
@@ -55,12 +52,11 @@ captionRouter.put(
   })
 );
 
-// POST render the caption overlay video
+// POST render the caption overlay videos (normal + greenscreen, with audio)
 captionRouter.post(
   '/render',
   ah(async (req, res) => {
-    const body = RenderBody.parse(req.body);
-    const overlay = await renderCaptionOverlay({ id: pid(req), background: body.background });
+    const overlay = await renderCaptionOverlay({ id: pid(req) });
     res.status(201).json(overlay);
   })
 );

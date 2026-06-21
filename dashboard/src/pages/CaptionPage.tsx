@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Captions,
-  Check,
   Code2,
   Download,
   FileText,
   Film,
   Loader2,
-  Sparkles
+  Pause,
+  Play,
+  Sparkles,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -22,6 +25,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { TabHeader } from '@/components/TabHeader';
 import { PhoneFrame } from '@/components/PhoneFrame';
 import { cn, mediaUrl } from '@/lib/utils';
+import { formatBytes, formatDuration } from '@/lib/mockMedia';
 import {
   useCaptions,
   useGenerateCaptions,
@@ -29,7 +33,7 @@ import {
   useSaveCaptions
 } from '@/lib/queries';
 import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
-import type { CaptionLine, CaptionSettings, Language } from '@/lib/types';
+import type { CaptionLine, CaptionMedia, CaptionSettings, Language } from '@/lib/types';
 
 const FONTS = ['Inter', 'Arial', 'Impact', 'Montserrat', 'Poppins', 'Bebas Neue', 'Noto Sans Devanagari'];
 
@@ -46,8 +50,6 @@ export function CaptionPage() {
   const [dirty, setDirty] = useState(false);
   const [previewMode, setPreviewMode] = useState<'normal' | 'highlighted' | 'green'>('highlighted');
 
-  // Seed local state from the server (only when the transcript identity changes,
-  // so autosave round-trips don't clobber in-progress edits).
   useEffect(() => {
     if (!caps) return;
     setLanguage((caps.language || workspace.language) as Language);
@@ -57,7 +59,6 @@ export function CaptionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, caps?.hasTranscript, caps?.wordsCount]);
 
-  // Debounced autosave of style + edited lines.
   const saveRef = useRef(save);
   saveRef.current = save;
   useEffect(() => {
@@ -86,10 +87,13 @@ export function CaptionPage() {
   };
 
   const runRender = async () => {
-    const background = previewMode === 'green' ? 'greenscreen' : 'transparent';
     try {
-      await render.mutateAsync(background);
-      toast.success(`Overlay rendered (${background})`);
+      // Flush the latest style/line tweaks before rendering so the overlay uses
+      // them (otherwise we'd render whatever the debounced autosave last saved).
+      if (settings) await save.mutateAsync({ settings, lines });
+      setDirty(false);
+      await render.mutateAsync();
+      toast.success('Overlay rendered with audio');
     } catch (e: any) {
       toast.error(String(e.message ?? e));
     }
@@ -109,6 +113,7 @@ export function CaptionPage() {
   }
 
   const hasTranscript = !!caps?.hasTranscript;
+  const overlay = caps?.overlay ?? null;
 
   return (
     <div className="animate-fade-in">
@@ -189,21 +194,29 @@ export function CaptionPage() {
               <ColorField label="Text color" value={settings.textColor} onChange={(v) => patch({ textColor: v })} />
               <ColorField label="Stroke color" value={settings.strokeColor} onChange={(v) => patch({ strokeColor: v })} />
               <ColorField label="Highlight color" value={settings.highlightColor} onChange={(v) => patch({ highlightColor: v })} />
-              <div className="grid gap-1.5">
-                <Label>Position</Label>
-                <Select
-                  value={settings.position}
-                  onChange={(e) => patch({ position: e.target.value as CaptionSettings['position'] })}
-                >
-                  <option value="top">Top</option>
-                  <option value="center">Center</option>
-                  <option value="bottom">Bottom</option>
-                </Select>
-              </div>
 
-              <div className="flex items-center justify-between sm:col-span-2">
+              <div className="flex items-center justify-between sm:self-end">
                 <Label>Uppercase</Label>
                 <Switch checked={settings.uppercase} onCheckedChange={(v) => patch({ uppercase: v })} />
+              </div>
+
+              {/* Vertical position slider (0 = top, 100 = bottom) */}
+              <div className="grid gap-1.5 sm:col-span-2">
+                <div className="flex items-center justify-between">
+                  <Label>Vertical position</Label>
+                  <span className="text-xs text-muted-foreground">{settings.positionY}</span>
+                </div>
+                <Slider
+                  value={settings.positionY}
+                  min={0}
+                  max={100}
+                  onValueChange={(v) => patch({ positionY: v })}
+                  className="mt-1.5"
+                />
+                <div className="flex justify-between text-[11px] text-muted-foreground">
+                  <span>Top</span>
+                  <span>Bottom</span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -214,7 +227,11 @@ export function CaptionPage() {
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold">
                   Captions
-                  {hasTranscript && <span className="ml-2 text-muted-foreground">{lines.length} lines · {caps?.wordsCount} words</span>}
+                  {hasTranscript && (
+                    <span className="ml-2 text-muted-foreground">
+                      {lines.length} lines · {caps?.wordsCount} words
+                    </span>
+                  )}
                 </h3>
                 <div className="flex gap-1.5">
                   <ExportChip id={id} file={caps?.files.srt} icon={FileText} label="SRT" />
@@ -247,49 +264,9 @@ export function CaptionPage() {
               )}
             </CardContent>
           </Card>
-
-          {/* Overlay render */}
-          <Card>
-            <CardContent className="flex flex-col gap-3 p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold">Caption overlay video</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Render a {previewMode === 'green' ? 'green-screen .mp4' : 'transparent .mov'} overlay (matches the preview tab).
-                  </p>
-                </div>
-                <Button variant="secondary" onClick={runRender} disabled={!hasTranscript || render.isPending}>
-                  {render.isPending ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" /> Rendering…
-                    </>
-                  ) : (
-                    <>
-                      <Film className="size-4" /> Render overlay
-                    </>
-                  )}
-                </Button>
-              </div>
-              {caps?.overlay && (
-                <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Check className="size-4 text-accent" />
-                    <span className="capitalize">{caps.overlay.background}</span>
-                    <Badge variant="outline">{caps.overlay.file.split('.').pop()}</Badge>
-                    <span className="text-xs text-muted-foreground">{caps.overlay.durationSec.toFixed(1)}s</span>
-                  </div>
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={mediaUrl(id, caps.overlay.file)} download>
-                      <Download className="size-4" /> Download
-                    </a>
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
 
-        {/* Right: live preview */}
+        {/* Right: live preview + render CTA */}
         <div className="lg:sticky lg:top-4 lg:self-start">
           <Card>
             <CardContent className="flex flex-col gap-3 p-5">
@@ -303,10 +280,163 @@ export function CaptionPage() {
                   <CaptionPreview words={previewWords} settings={settings} mode={previewMode} />
                 </TabsContent>
               </Tabs>
-              <p className="text-center text-xs text-muted-foreground">Live preview updates as you tweak the style.</p>
+              <p className="text-center text-xs text-muted-foreground">
+                Live preview updates as you tweak the style.
+              </p>
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full"
+                onClick={runRender}
+                disabled={!hasTranscript || render.isPending}
+              >
+                {render.isPending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Rendering…
+                  </>
+                ) : (
+                  <>
+                    <Film className="size-4" /> Render overlay
+                  </>
+                )}
+              </Button>
+              {!hasTranscript && (
+                <p className="text-center text-[11px] text-muted-foreground">
+                  Generate captions first to enable rendering.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Caption overlay video (playable, with audio) */}
+      <Card className="mt-5">
+        <CardContent className="p-5">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold">Caption overlay video</h3>
+            <p className="text-xs text-muted-foreground">
+              Plays with your generated narration. In the next step this overlay + audio go onto the Short.
+            </p>
+          </div>
+
+          {!overlay ? (
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border p-10 text-center">
+              <div className="flex size-12 items-center justify-center rounded-xl bg-muted">
+                <Film className="size-6 text-muted-foreground" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Click <span className="font-medium text-foreground">Render overlay</span> to produce playable Normal and Greenscreen videos.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-2">
+              <OverlayPlayer
+                title="Normal"
+                src={overlay.normal ? mediaUrl(id, overlay.normal.file) : ''}
+                version={overlay.createdAt}
+                media={overlay.normal}
+                durationSec={overlay.durationSec}
+              />
+              <OverlayPlayer
+                title="Greenscreen"
+                src={overlay.green ? mediaUrl(id, overlay.green.file) : ''}
+                version={overlay.createdAt}
+                media={overlay.green}
+                durationSec={overlay.durationSec}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function OverlayPlayer({
+  title,
+  src,
+  version,
+  media,
+  durationSec
+}: {
+  title: string;
+  src: string;
+  version: string;
+  media: CaptionMedia | null;
+  durationSec: number;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+
+  if (!media) return null;
+  const ext = (media.file.split('.').pop() || 'mp4').toUpperCase();
+  // The file is overwritten on each render (same path); bust the cache so a new
+  // render is fetched instead of the browser replaying the old video.
+  const bustedSrc = `${src}?v=${encodeURIComponent(version)}`;
+
+  const toggle = () => {
+    const v = ref.current;
+    if (!v) return;
+    if (v.paused) v.play();
+    else v.pause();
+  };
+  const toggleMute = () => {
+    const v = ref.current;
+    if (!v) return;
+    v.muted = !v.muted;
+    setMuted(v.muted);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-center text-xs font-medium text-muted-foreground">{title}</p>
+      <div className="relative mx-auto aspect-[9/16] w-full max-w-[280px] overflow-hidden rounded-lg border border-border bg-black">
+        <video
+          key={bustedSrc}
+          ref={ref}
+          src={bustedSrc}
+          playsInline
+          onClick={toggle}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => setPlaying(false)}
+          className="size-full cursor-pointer object-cover"
+          controls
+        />
+        {!playing && (
+          <button
+            onClick={toggle}
+            className="absolute inset-0 flex items-center justify-center"
+            aria-label="Play"
+          >
+            <span className="flex size-14 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm">
+              <Play className="size-6 text-white" />
+            </span>
+          </button>
+        )}
+      </div>
+
+      {/* Controls + info */}
+      <div className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-2">
+        <Button variant="ghost" size="icon" className="size-8" onClick={toggle} title={playing ? 'Pause' : 'Play'}>
+          {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+        </Button>
+        <Button variant="ghost" size="icon" className="size-8" onClick={toggleMute} title={muted ? 'Unmute' : 'Mute'}>
+          {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+        </Button>
+        <span className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
+          <Badge variant="outline">{ext}</Badge>
+          <span>{formatDuration(durationSec)}</span>
+          <span>·</span>
+          <span>{formatBytes(media.sizeBytes)}</span>
+        </span>
+        <Button variant="ghost" size="icon" className="size-8" asChild title="Download">
+          <a href={bustedSrc} download>
+            <Download className="size-4" />
+          </a>
+        </Button>
       </div>
     </div>
   );
@@ -328,17 +458,31 @@ function CaptionPreview({
     return () => clearInterval(t);
   }, [mode, words.length]);
 
-  const justify =
-    settings.position === 'top' ? 'flex-start' : settings.position === 'bottom' ? 'flex-end' : 'center';
-  const scale = 307 / 1080;
+  // Measure the actual frame width so the preview font size is pixel-accurate to
+  // the 1080-wide rendered video (fontSize px scaled by frameWidth / 1080).
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [frameW, setFrameW] = useState(300);
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setFrameW(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const scale = frameW / 1080;
+
+  // Mirror the engine: 8% margins, block centered at the positionY fraction.
+  const pad = 8;
+  const top = pad + ((100 - 2 * pad) * settings.positionY) / 100;
 
   return (
     <PhoneFrame>
       <div
+        ref={frameRef}
         className="absolute inset-0"
         style={{ background: mode === 'green' ? '#00FF00' : 'radial-gradient(120% 120% at 50% 0%, #2a2a2a 0%, #0b0b0b 100%)' }}
       />
-      <div className="absolute inset-0 flex px-4" style={{ alignItems: justify, paddingTop: 40, paddingBottom: 40 }}>
+      <div className="absolute inset-x-0 px-4" style={{ top: `${top}%`, transform: 'translateY(-50%)' }}>
         <p
           className="w-full text-center leading-tight"
           style={{

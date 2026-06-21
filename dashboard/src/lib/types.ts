@@ -9,6 +9,7 @@ export type Stages = {
   script: Stage;
   audio: Stage;
   caption: Stage;
+  assets: Stage;
   video: Stage;
   upload: Stage;
 };
@@ -55,17 +56,20 @@ export type CaptionSettings = {
   strokeColor: string;
   strokeWidth: number;
   highlightColor: string;
-  position: 'top' | 'center' | 'bottom';
+  positionY: number; // 0 = top, 100 = bottom
   uppercase: boolean;
 };
 
 export type CaptionLine = { id: number; start: number; end: number; text: string };
 
+export type CaptionMedia = { file: string; sizeBytes: number };
+
 export type CaptionOverlay = {
-  file: string;
-  background: 'transparent' | 'greenscreen';
-  durationSec: number;
   createdAt: string;
+  durationSec: number;
+  hasAudio: boolean;
+  normal: CaptionMedia | null;
+  green: CaptionMedia | null;
 };
 
 export type CaptionsState = {
@@ -129,7 +133,8 @@ export const STAGE_TABS = [
   { key: 'script', label: 'Script Generator', tab: 'script' },
   { key: 'audio', label: 'Audio Generator', tab: 'audio' },
   { key: 'caption', label: 'Caption Maker', tab: 'caption' },
-  { key: 'video', label: 'Video Creator', tab: 'video' },
+  { key: 'assets', label: 'Assets', tab: 'assets' },
+  { key: 'video', label: 'Video Editor', tab: 'video' },
   { key: 'upload', label: 'Video Uploader', tab: 'upload' }
 ] as const;
 

@@ -225,8 +225,7 @@ export function useSaveCaptions(id: string) {
 export function useRenderCaptionOverlay(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (background: 'transparent' | 'greenscreen') =>
-      api.renderCaptionOverlay(id, background),
+    mutationFn: () => api.renderCaptionOverlay(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.captions(id) })
   });
 }

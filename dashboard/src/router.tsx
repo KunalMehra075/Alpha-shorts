@@ -6,7 +6,8 @@ import { TemplatesPage } from '@/pages/TemplatesPage';
 import { ScriptPage } from '@/pages/ScriptPage';
 import { AudioPage } from '@/pages/AudioPage';
 import { CaptionPage } from '@/pages/CaptionPage';
-import { VideoPage } from '@/pages/VideoPage';
+import { AssetPage } from '@/pages/AssetPage';
+import { VideoEditorPage } from '@/pages/VideoEditorPage';
 import { UploadPage } from '@/pages/UploadPage';
 
 export const router = createBrowserRouter([
@@ -24,7 +25,8 @@ export const router = createBrowserRouter([
           { path: 'script', element: <ScriptPage /> },
           { path: 'audio', element: <AudioPage /> },
           { path: 'caption', element: <CaptionPage /> },
-          { path: 'video', element: <VideoPage /> },
+          { path: 'assets', element: <AssetPage /> },
+          { path: 'video', element: <VideoEditorPage /> },
           { path: 'upload', element: <UploadPage /> }
         ]
       },
