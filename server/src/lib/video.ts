@@ -11,6 +11,7 @@ import {
   getAssetsState,
   getAudioState,
   getCaptions,
+  getLibrary,
   getMusic,
   getRenders,
   getScenes,
@@ -117,6 +118,19 @@ export function clearMusic(opts: { id: string }) {
   const cur = getMusic(opts.id);
   if (cur.file) rmSync(join(workspaceDir(opts.id), cur.file), { force: true });
   return setWorkspaceMusic(opts.id, { file: null, name: '' }).music;
+}
+
+// Use a library audio item as the background-music track.
+export function setMusicFromLibrary(opts: { id: string; itemId: string }) {
+  const { id, itemId } = opts;
+  const item = getLibrary(id).find((i) => i.id === itemId);
+  if (!item) throw new HttpError(404, `Library item "${itemId}" not found.`);
+  if (item.kind !== 'audio') throw new HttpError(400, 'Only audio files can be background music.');
+  ensureDir(musicDir(id));
+  const ext = extname(item.file) || '.mp3';
+  const rel = `music/track${ext}`;
+  copyFileSync(join(workspaceDir(id), item.file), join(workspaceDir(id), rel));
+  return setWorkspaceMusic(id, { file: rel, name: item.name }).music;
 }
 
 // Build the Remotion composition inputProps from the user's manifest choices +

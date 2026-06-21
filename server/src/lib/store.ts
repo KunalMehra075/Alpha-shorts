@@ -467,6 +467,33 @@ export function setSceneAssets(
   return m.assets;
 }
 
+// ── Media library ─────────────────────────────────────────────────────────────
+
+export function libraryDir(id: string) {
+  return join(workspaceDir(id), 'library');
+}
+
+export function getLibrary(id: string) {
+  return readManifest(id).library;
+}
+
+export function addLibraryItem(id: string, item: Manifest['library'][number]): Manifest['library'] {
+  const m = readManifest(id);
+  m.library.unshift(item);
+  writeManifest(m);
+  return m.library;
+}
+
+export function deleteLibraryItem(id: string, itemId: string): Manifest['library'] {
+  const m = readManifest(id);
+  const item = m.library.find((x) => x.id === itemId);
+  if (!item) throw new HttpError(404, `Library item "${itemId}" not found.`);
+  removePath(join(workspaceDir(id), item.file));
+  m.library = m.library.filter((x) => x.id !== itemId);
+  writeManifest(m);
+  return m.library;
+}
+
 // ── Background music ──────────────────────────────────────────────────────────
 
 export function musicDir(id: string) {

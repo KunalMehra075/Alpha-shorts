@@ -10,6 +10,7 @@ import {
   assetsDir,
   ensureSceneRows,
   getAssetsState,
+  getLibrary,
   getScenes,
   setSceneAssets
 } from './store';
@@ -136,6 +137,31 @@ export async function selectScene(opts: {
 
 export function clearScene(opts: { id: string; sceneNumber: number }) {
   return setSceneAssets(opts.id, opts.sceneNumber, { selected: null });
+}
+
+// Assign a library image/video to a scene (copies it into the workspace assets).
+export async function selectSceneFromLibrary(opts: { id: string; sceneNumber: number; itemId: string }) {
+  const { id, sceneNumber, itemId } = opts;
+  const item = getLibrary(id).find((i) => i.id === itemId);
+  if (!item) throw new HttpError(404, `Library item "${itemId}" not found.`);
+  if (item.kind === 'audio') throw new HttpError(400, 'Audio files can’t be a scene visual — use them as background music.');
+
+  const ref: AssetRef = {
+    origin: 'library',
+    source: 'library',
+    kind: item.kind,
+    label: item.name,
+    width: 0,
+    height: 0,
+    orientation: 'unknown',
+    thumbUrl: '',
+    downloadUrl: null,
+    downloadUrls: [],
+    libraryPath: join(workspaceDir(id), item.file),
+    file: null,
+    sizeBytes: 0
+  };
+  return selectScene({ id, sceneNumber, ref });
 }
 
 export function saveSceneMeta(opts: {

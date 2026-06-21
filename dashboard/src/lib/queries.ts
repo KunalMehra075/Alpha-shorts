@@ -234,6 +234,53 @@ export function useRenderCaptionOverlay(id: string) {
   });
 }
 
+// ── Media library ─────────────────────────────────────────────────────────────
+export function useLibrary(id: string | undefined) {
+  return useQuery({
+    queryKey: ['library', id ?? ''] as const,
+    queryFn: () => api.getLibrary(id!),
+    enabled: !!id
+  });
+}
+
+export function useUploadLibrary(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.uploadLibrary(id, file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['library', id] })
+  });
+}
+
+export function useDeleteLibrary(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => api.deleteLibrary(id, itemId),
+    onSuccess: (items) => qc.setQueryData(['library', id], items)
+  });
+}
+
+export function useSelectSceneFromLibrary(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sceneNumber, itemId }: { sceneNumber: number; itemId: string }) =>
+      api.selectSceneFromLibrary(id, sceneNumber, itemId),
+    onSuccess: (state) => {
+      qc.setQueryData(qk.assets(id), state);
+      qc.invalidateQueries({ queryKey: qk.assets(id) });
+      qc.invalidateQueries({ queryKey: qk.workspace(id) });
+      qc.invalidateQueries({ queryKey: qk.workspaces });
+    }
+  });
+}
+
+export function useMusicFromLibrary(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => api.musicFromLibrary(id, itemId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspace(id) })
+  });
+}
+
 // ── Scenes (canonical breakdown) ──────────────────────────────────────────────
 export function useScenes(id: string | undefined) {
   return useQuery({

@@ -6,6 +6,7 @@ import {
   Clapperboard,
   Download,
   Film,
+  Library as LibraryIcon,
   Loader2,
   Music,
   Pause,
@@ -21,6 +22,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TabHeader } from '@/components/TabHeader';
 import { TransitionIcon } from '@/components/TransitionIcon';
 import { cn, relativeTime } from '@/lib/utils';
@@ -29,6 +31,8 @@ import {
   useCaptions,
   useDeleteMusic,
   useDeleteRender,
+  useLibrary,
+  useMusicFromLibrary,
   useRenderVideo,
   useRenders,
   useScenes,
@@ -117,6 +121,10 @@ export function VideoEditorPage() {
 
   const uploadMusic = useUploadMusic(id);
   const deleteMusic = useDeleteMusic(id);
+  const musicFromLib = useMusicFromLibrary(id);
+  const { data: libraryData } = useLibrary(id);
+  const audioLibrary = (libraryData ?? []).filter((i) => i.kind === 'audio');
+  const [musicPickerOpen, setMusicPickerOpen] = useState(false);
 
   // Real media for the preview player (served from the workspace).
   const narrationSrc = audioTake ? `/media/${id}/${audioTake.file}` : undefined;
@@ -268,30 +276,39 @@ export function VideoEditorPage() {
                         </Button>
                       </div>
                     ) : (
-                      <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted">
-                        {uploadMusic.isPending ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <Music className="size-4" />
-                        )}
-                        Upload track
-                        <input
-                          type="file"
-                          accept="audio/*"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const f = e.target.files?.[0];
-                            e.target.value = '';
-                            if (!f) return;
-                            try {
-                              await uploadMusic.mutateAsync(f);
-                              toast.success('Music track added');
-                            } catch (err: any) {
-                              toast.error(String(err.message ?? err));
-                            }
-                          }}
-                        />
-                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted">
+                          {uploadMusic.isPending ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Music className="size-4" />
+                          )}
+                          Upload track
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const f = e.target.files?.[0];
+                              e.target.value = '';
+                              if (!f) return;
+                              try {
+                                await uploadMusic.mutateAsync(f);
+                                toast.success('Music track added');
+                              } catch (err: any) {
+                                toast.error(String(err.message ?? err));
+                              }
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setMusicPickerOpen(true)}
+                          className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
+                        >
+                          <LibraryIcon className="size-4" /> Add from Asset
+                        </button>
+                      </div>
                     )}
                     <div className="grid gap-1.5">
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -433,6 +450,46 @@ export function VideoEditorPage() {
         })}
         onProceed={() => navigate(`/w/${id}/upload`)}
       />
+
+      <Dialog open={musicPickerOpen} onOpenChange={setMusicPickerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Choose background music</DialogTitle>
+          </DialogHeader>
+          {audioLibrary.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No audio in your library yet. Drag &amp; drop audio files in the Assets step.
+            </p>
+          ) : (
+            <div className="flex max-h-[50vh] flex-col gap-2 overflow-y-auto">
+              {audioLibrary.map((a) => (
+                <div key={a.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
+                  <Music className="size-4 shrink-0 text-accent" />
+                  <span className="min-w-0 flex-1 truncate text-sm">{a.name}</span>
+                  <audio src={`/media/${id}/${a.file}`} controls className="h-8 max-w-[180px]" />
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={musicFromLib.isPending}
+                    onClick={async () => {
+                      try {
+                        await musicFromLib.mutateAsync(a.id);
+                        if (!music.enabled) setMusic(id, { enabled: true });
+                        toast.success('Background music set');
+                        setMusicPickerOpen(false);
+                      } catch (e: any) {
+                        toast.error(String(e.message ?? e));
+                      }
+                    }}
+                  >
+                    Use
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

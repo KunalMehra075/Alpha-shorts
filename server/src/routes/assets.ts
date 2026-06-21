@@ -10,6 +10,7 @@ import {
   saveSceneMeta,
   searchScene,
   selectScene,
+  selectSceneFromLibrary,
   uploadScene
 } from '../lib/assets';
 
@@ -29,6 +30,7 @@ const SaveBody = z.object({
   imagePrompt: z.string().default('')
 });
 const SelectBody = z.object({ ref: AssetRef });
+const SelectLibraryBody = z.object({ itemId: z.string().min(1) });
 
 // GET current assets state (scene rows initialized from the script).
 assetsRouter.get(
@@ -54,6 +56,15 @@ assetsRouter.post(
   ah(async (req, res) => {
     const body = SelectBody.parse(req.body);
     res.json(await selectScene({ id: pid(req), sceneNumber: sceneNum(req), ref: body.ref }));
+  })
+);
+
+// POST select a library image/video for a scene (copies it into the workspace).
+assetsRouter.post(
+  '/:scene/select-library',
+  ah(async (req, res) => {
+    const body = SelectLibraryBody.parse(req.body);
+    res.json(await selectSceneFromLibrary({ id: pid(req), sceneNumber: sceneNum(req), itemId: body.itemId }));
   })
 );
 

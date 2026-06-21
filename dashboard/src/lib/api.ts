@@ -3,6 +3,7 @@ import type {
   AssetsState,
   AudioState,
   BreakdownResult,
+  LibraryItem,
   RenderRecord,
   RenderTimelinePayload,
   ScenePatch,
@@ -146,6 +147,37 @@ export const api = {
     }),
   renderCaptionOverlay: (id: string) =>
     request<CaptionOverlay>(`/workspaces/${id}/caption/render`, { method: 'POST' }),
+
+  // media library
+  getLibrary: (id: string) => request<LibraryItem[]>(`/workspaces/${id}/library`),
+  uploadLibrary: async (id: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/workspaces/${id}/library`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const b = await res.json();
+        if (b?.error) msg = b.error;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.json() as Promise<LibraryItem>;
+  },
+  deleteLibrary: (id: string, itemId: string) =>
+    request<LibraryItem[]>(`/workspaces/${id}/library/${itemId}`, { method: 'DELETE' }),
+  selectSceneFromLibrary: (id: string, sceneNumber: number, itemId: string) =>
+    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/select-library`, {
+      method: 'POST',
+      body: JSON.stringify({ itemId })
+    }),
+  musicFromLibrary: (id: string, itemId: string) =>
+    request<MusicTrack>(`/workspaces/${id}/video/music/from-library`, {
+      method: 'POST',
+      body: JSON.stringify({ itemId })
+    }),
 
   // scenes (canonical breakdown)
   getScenes: (id: string) => request<Scene[]>(`/workspaces/${id}/scenes`),

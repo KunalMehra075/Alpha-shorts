@@ -130,6 +130,15 @@ export type RenderRecord = {
 
 export type MusicTrack = { file: string | null; name: string };
 
+export type LibraryItem = {
+  id: string;
+  kind: 'image' | 'video' | 'audio';
+  file: string;
+  name: string;
+  sizeBytes: number;
+  createdAt: string;
+};
+
 export type RenderTimelinePayload = {
   scenes: { index: number; effect: string; transition: string; durationSec: number }[];
   captionsEnabled: boolean;
@@ -143,6 +152,7 @@ export type Manifest = WorkspaceSummary & {
   captions: CaptionsState;
   assets: AssetsState;
   music: MusicTrack;
+  library: LibraryItem[];
   scenes: Scene[];
   renders: RenderRecord[];
   upload: UploadMeta;

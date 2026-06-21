@@ -128,6 +128,17 @@ export const AssetRef = z.object({
 });
 export type AssetRef = z.infer<typeof AssetRef>;
 
+// A user-provided media file dropped into the workspace's asset library.
+export const LibraryItem = z.object({
+  id: z.string(),
+  kind: z.enum(['image', 'video', 'audio']),
+  file: z.string(), // workspace-relative, e.g. 'library/<id>.mp4'
+  name: z.string().default(''),
+  sizeBytes: z.number().default(0),
+  createdAt: z.string()
+});
+export type LibraryItem = z.infer<typeof LibraryItem>;
+
 export const SceneAssets = z.object({
   sceneNumber: z.number(),
   keywords: z.array(z.string()).default([]),
@@ -203,6 +214,8 @@ export const Manifest = z.object({
   music: z
     .object({ file: z.string().nullable().default(null), name: z.string().default('') })
     .default({ file: null, name: '' }),
+  // User-dropped media (images/videos/audio) available across steps.
+  library: z.array(LibraryItem).default([]),
   // Canonical, editable scene-by-scene breakdown (built in the Assets step from
   // the script OR the caption transcript). `.default([])` so old manifests parse.
   scenes: z.array(Scene).default([]),

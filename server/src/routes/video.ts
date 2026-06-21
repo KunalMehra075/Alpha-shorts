@@ -3,7 +3,14 @@ import multer from 'multer';
 import { z } from 'zod';
 import { ah } from '../lib/async';
 import { deleteRender, readManifest } from '../lib/store';
-import { clearMusic, getRenderStatus, listRenders, saveMusic, startRender } from '../lib/video';
+import {
+  clearMusic,
+  getRenderStatus,
+  listRenders,
+  saveMusic,
+  setMusicFromLibrary,
+  startRender
+} from '../lib/video';
 
 export const videoRouter = Router({ mergeParams: true });
 
@@ -63,6 +70,15 @@ videoRouter.post(
       return;
     }
     res.status(201).json(saveMusic({ id: pid(req), buffer: file.buffer, originalName: file.originalname }));
+  })
+);
+
+// POST set the background-music track from a library audio item.
+videoRouter.post(
+  '/music/from-library',
+  ah((req, res) => {
+    const itemId = z.object({ itemId: z.string().min(1) }).parse(req.body).itemId;
+    res.status(201).json(setMusicFromLibrary({ id: pid(req), itemId }));
   })
 );
 

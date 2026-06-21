@@ -6,10 +6,14 @@ import {
   ImagePlus,
   Images,
   Loader2,
+  Music,
   Play,
+  Plus,
   Search,
   Sparkles,
+  Trash2,
   Upload,
+  UploadCloud,
   Wand2,
   X
 } from 'lucide-react';
@@ -22,6 +26,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TabHeader } from '@/components/TabHeader';
 import { cn } from '@/lib/utils';
 import {
@@ -29,16 +34,20 @@ import {
   useAutofillAssets,
   useBuildBreakdown,
   useClearSceneAsset,
+  useDeleteLibrary,
+  useLibrary,
   useScenes,
   useSearchSceneAssets,
   useSelectSceneAsset,
+  useSelectSceneFromLibrary,
   useUpdateScene,
+  useUploadLibrary,
   useUploadSceneAsset
 } from '@/lib/queries';
 import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
 import { placeholderDataUri } from '@/lib/placeholder';
 import { formatBytes } from '@/lib/mockMedia';
-import type { AssetRef, Scene, SceneAssets, ScenePatch, VisualType } from '@/lib/types';
+import type { AssetRef, LibraryItem, Scene, SceneAssets, ScenePatch, VisualType } from '@/lib/types';
 
 const VISUAL_TYPES: VisualType[] = ['Image', 'Video', 'Animation', 'SplitScreen'];
 const EMPTY_ROW = { sceneNumber: 0, keywords: [], imagePrompt: '', candidates: [], selected: null } satisfies SceneAssets;
@@ -69,8 +78,29 @@ export function AssetPage() {
   const clear = useClearSceneAsset(id);
   const upload = useUploadSceneAsset(id);
   const autofill = useAutofillAssets(id);
+  const { data: libraryData } = useLibrary(id);
+  const library = libraryData ?? [];
+  const uploadLib = useUploadLibrary(id);
+  const delLib = useDeleteLibrary(id);
 
   const [selected, setSelected] = useState(0);
+  const [modalItem, setModalItem] = useState<LibraryItem | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const dragDepth = useRef(0);
+
+  const addToLibrary = (files: File[]) => {
+    const media = files.filter((f) => /^(image|video|audio)\//.test(f.type));
+    if (!media.length) {
+      toast.error('Drop image, video, or audio files.');
+      return;
+    }
+    Promise.allSettled(media.map((f) => uploadLib.mutateAsync(f))).then((rs) => {
+      const ok = rs.filter((r) => r.status === 'fulfilled').length;
+      if (ok) toast.success(`Added ${ok} file${ok > 1 ? 's' : ''} to the library`);
+      const fail = rs.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+      if (fail) toast.error(String(fail.reason?.message ?? 'Some files failed to upload'));
+    });
+  };
 
   const runBuild = async () => {
     try {
@@ -133,7 +163,34 @@ export function AssetPage() {
   const assignedCount = scenes.filter((s, i) => rowFor(s, i).selected).length;
 
   return (
-    <div className="animate-fade-in">
+    <div
+      className="relative animate-fade-in"
+      onDragEnter={(e) => {
+        e.preventDefault();
+        dragDepth.current += 1;
+        setDragOver(true);
+      }}
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragOver(false);
+        addToLibrary(Array.from(e.dataTransfer.files));
+      }}
+    >
+      {dragOver && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-accent bg-card px-10 py-8 text-center">
+            <UploadCloud className="size-8 text-accent" />
+            <p className="text-sm font-semibold">Drop to add to the asset library</p>
+            <p className="text-xs text-muted-foreground">Images, videos, and audio</p>
+          </div>
+        </div>
+      )}
       <TabHeader
         icon={Images}
         title="Assets"
@@ -217,7 +274,7 @@ export function AssetPage() {
                         <td className="p-3 align-top">
                           {r.selected ? (
                             thumb ? (
-                              <img src={thumb} alt="" className="h-12 w-8 rounded object-cover ring-1 ring-border" />
+                              <img src={thumb} alt="" className="h-12 w-12 rounded object-cover ring-1 ring-border" />
                             ) : (
                               <span className="inline-flex h-12 w-8 items-center justify-center rounded bg-muted ring-1 ring-border">
                                 <Film className="size-4 text-muted-foreground" />
@@ -264,7 +321,14 @@ export function AssetPage() {
         </div>
       </div>
 
-      <AssetLibrary id={id} rows={rows} />
+      <AssetLibrary
+        id={id}
+        items={library}
+        uploading={uploadLib.isPending}
+        onAdd={addToLibrary}
+        onOpen={setModalItem}
+        onDelete={(itemId) => delLib.mutate(itemId)}
+      />
 
       <div className="mt-5 flex items-center justify-between rounded-xl border border-border bg-card p-4">
         <p className="text-sm text-muted-foreground">
@@ -274,6 +338,10 @@ export function AssetPage() {
           Proceed to Video Editor <ArrowRight className="size-4" />
         </Button>
       </div>
+
+      {modalItem && (
+        <LibraryModal id={id} item={modalItem} sceneNumber={selNumber} onClose={() => setModalItem(null)} />
+      )}
     </div>
   );
 }
@@ -390,7 +458,7 @@ function SceneInspector({
                   <Film className="size-5 text-muted-foreground" />
                 </span>
               )}
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 max-w-[320px]">
                 <p className="truncate text-sm font-medium">{selected.label || selected.kind}</p>
                 <p className="text-xs capitalize text-muted-foreground">
                   {selected.kind} · {selected.source}
@@ -518,59 +586,184 @@ function SceneInspector({
   );
 }
 
-function AssetLibrary({ id, rows }: { id: string; rows: SceneAssets[] }) {
-  const used = rows.map((r) => r.selected).filter(Boolean) as AssetRef[];
-  const images = used.filter((a) => a.kind === 'image');
-  const videos = used.filter((a) => a.kind === 'video');
-  const uploaded = used.filter((a) => a.origin === 'upload');
-  const stock = used.filter((a) => a.source === 'pexels' || a.source === 'pixabay');
+function AssetLibrary({
+  id,
+  items,
+  uploading,
+  onAdd,
+  onOpen,
+  onDelete
+}: {
+  id: string;
+  items: LibraryItem[];
+  uploading: boolean;
+  onAdd: (files: File[]) => void;
+  onOpen: (item: LibraryItem) => void;
+  onDelete: (itemId: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const images = items.filter((i) => i.kind === 'image');
+  const videos = items.filter((i) => i.kind === 'video');
+  const audios = items.filter((i) => i.kind === 'audio');
 
-  const Section = ({ items }: { items: AssetRef[] }) =>
-    items.length === 0 ? (
-      <p className="py-6 text-center text-sm text-muted-foreground">Nothing here yet.</p>
+  const MediaCard = ({ item }: { item: LibraryItem }) => {
+    const url = `/media/${id}/${item.file}`;
+    return (
+      <div className="group relative">
+        <button
+          onClick={() => onOpen(item)}
+          title={`${item.name} — click to add to the selected scene`}
+          className="block aspect-[9/16] w-full overflow-hidden rounded-md ring-1 ring-border transition hover:ring-2 hover:ring-accent/60"
+        >
+          {item.kind === 'image' ? (
+            <img src={url} alt="" className="size-full object-cover" />
+          ) : (
+            <video src={url} muted preload="metadata" className="size-full object-cover" />
+          )}
+          {item.kind === 'video' && (
+            <span className="absolute bottom-1 left-1 rounded bg-black/60 p-0.5">
+              <Play className="size-2.5 text-white" />
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => onDelete(item.id)}
+          title="Delete"
+          className="absolute right-1 top-1 hidden rounded bg-black/65 p-1 text-white hover:text-destructive group-hover:block"
+        >
+          <Trash2 className="size-3" />
+        </button>
+      </div>
+    );
+  };
+
+  const Grid = ({ list }: { list: LibraryItem[] }) =>
+    list.length === 0 ? (
+      <p className="py-6 text-center text-sm text-muted-foreground">
+        Nothing here yet — drag &amp; drop media, or use Add media.
+      </p>
     ) : (
       <div className="grid grid-cols-6 gap-2 sm:grid-cols-8">
-        {items.map((a, i) => {
-          const t = thumbFor(id, a) ?? placeholderDataUri(`${a.source}-${i}`, { ratio: '9:16' });
-          return (
-            <div key={`${a.file ?? a.downloadUrl ?? i}`} className="relative">
-              <img src={t} alt="" className="aspect-[9/16] w-full rounded-md object-cover ring-1 ring-border" />
-              {a.kind === 'video' && (
-                <span className="absolute bottom-1 left-1 rounded bg-black/60 p-0.5">
-                  <Play className="size-2.5 text-white" />
-                </span>
-              )}
-            </div>
-          );
-        })}
+        {list.map((it) => (
+          <MediaCard key={it.id} item={it} />
+        ))}
       </div>
     );
 
   return (
     <Card className="mt-5">
       <CardContent className="p-5">
-        <h3 className="mb-3 text-sm font-semibold">Asset Library</h3>
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Asset Library</h3>
+          <Button variant="outline" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
+            {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Add media
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*,video/*,audio/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const fs = Array.from(e.target.files ?? []);
+              e.target.value = '';
+              if (fs.length) onAdd(fs);
+            }}
+          />
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Drag &amp; drop images, videos, or audio anywhere on this page. Click an image/video to add it
+          to the selected scene; audio is used in the Video Editor's background music.
+        </p>
         <Tabs defaultValue="images">
           <TabsList>
             <TabsTrigger value="images">Images ({images.length})</TabsTrigger>
             <TabsTrigger value="videos">Videos ({videos.length})</TabsTrigger>
-            <TabsTrigger value="uploaded">Uploaded ({uploaded.length})</TabsTrigger>
-            <TabsTrigger value="stock">Stock ({stock.length})</TabsTrigger>
+            <TabsTrigger value="audio">Audio ({audios.length})</TabsTrigger>
           </TabsList>
           <TabsContent value="images">
-            <Section items={images} />
+            <Grid list={images} />
           </TabsContent>
           <TabsContent value="videos">
-            <Section items={videos} />
+            <Grid list={videos} />
           </TabsContent>
-          <TabsContent value="uploaded">
-            <Section items={uploaded} />
-          </TabsContent>
-          <TabsContent value="stock">
-            <Section items={stock} />
+          <TabsContent value="audio">
+            {audios.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No audio yet — drop audio files to use as background music in the Video Editor.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {audios.map((a) => (
+                  <div key={a.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
+                    <Music className="size-4 shrink-0 text-accent" />
+                    <span className="min-w-0 flex-1 truncate text-sm">{a.name}</span>
+                    <audio src={`/media/${id}/${a.file}`} controls className="h-8 max-w-[220px]" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 text-destructive"
+                      onClick={() => onDelete(a.id)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </CardContent>
     </Card>
+  );
+}
+
+// Preview a library image/video and add it to the currently selected scene.
+function LibraryModal({
+  id,
+  item,
+  sceneNumber,
+  onClose
+}: {
+  id: string;
+  item: LibraryItem;
+  sceneNumber: number;
+  onClose: () => void;
+}) {
+  const add = useSelectSceneFromLibrary(id);
+  const url = `/media/${id}/${item.file}`;
+  const doAdd = async () => {
+    try {
+      await add.mutateAsync({ sceneNumber, itemId: item.id });
+      toast.success(`Added to Scene ${sceneNumber}`);
+      onClose();
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="truncate">{item.name}</DialogTitle>
+        </DialogHeader>
+        <div className="mx-auto aspect-[9/16] w-full max-w-[260px] overflow-hidden rounded-lg border border-border bg-black">
+          {item.kind === 'image' ? (
+            <img src={url} alt="" className="size-full object-contain" />
+          ) : (
+            <video src={url} controls playsInline className="size-full object-contain" />
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={doAdd} disabled={add.isPending}>
+            {add.isPending ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />} Add to
+            Scene {sceneNumber}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
