@@ -139,11 +139,42 @@ export type LibraryItem = {
   createdAt: string;
 };
 
+export type MediaKind = 'image' | 'video' | 'audio';
+
+export type MediaItem = {
+  id: string;
+  kind: MediaKind;
+  file: string; // relative to the global /library dir
+  name: string;
+  sizeBytes: number;
+  durationSec: number; // 0 for images
+  createdAt: string;
+};
+
+export type SoundItem = {
+  id: string;
+  name: string;
+  file: string; // relative to the global /sounds dir
+  durationSec: number;
+  sizeBytes: number;
+  createdAt: string;
+};
+
+export type SoundPlacement = {
+  id: string;
+  name: string;
+  file: string; // workspace-relative
+  atSec: number;
+  durationSec: number;
+  volume: number;
+};
+
 export type RenderTimelinePayload = {
   scenes: { index: number; effect: string; transition: string; durationSec: number }[];
   captionsEnabled: boolean;
   preset: string | null;
   music: { enabled: boolean; volume: number; fadeIn: boolean; fadeOut: boolean };
+  soundsEnabled: boolean;
 };
 
 export type Manifest = WorkspaceSummary & {
@@ -153,6 +184,7 @@ export type Manifest = WorkspaceSummary & {
   assets: AssetsState;
   music: MusicTrack;
   library: LibraryItem[];
+  sounds: SoundPlacement[];
   scenes: Scene[];
   renders: RenderRecord[];
   upload: UploadMeta;

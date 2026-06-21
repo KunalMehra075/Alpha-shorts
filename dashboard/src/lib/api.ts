@@ -4,10 +4,14 @@ import type {
   AudioState,
   BreakdownResult,
   LibraryItem,
+  MediaItem,
+  MediaKind,
   RenderRecord,
   RenderTimelinePayload,
   ScenePatch,
   SeoSuggestions,
+  SoundItem,
+  SoundPlacement,
   UploadMeta,
   YoutubeState,
   YoutubeStatus,
@@ -178,6 +182,62 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ itemId })
     }),
+
+  // global sound library
+  listSounds: () => request<SoundItem[]>(`/sounds`),
+  uploadSound: async (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/sounds`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const b = await res.json();
+        if (b?.error) msg = b.error;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.json() as Promise<SoundItem>;
+  },
+  deleteSound: (soundId: string) => request<SoundItem[]>(`/sounds/${soundId}`, { method: 'DELETE' }),
+
+  // global media library (images / videos / music)
+  listMedia: (kind?: MediaKind) =>
+    request<MediaItem[]>(`/media-library${kind ? `?kind=${kind}` : ''}`),
+  uploadMedia: async (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/media-library`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const b = await res.json();
+        if (b?.error) msg = b.error;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.json() as Promise<MediaItem>;
+  },
+  deleteMedia: (id: string) => request<MediaItem[]>(`/media-library/${id}`, { method: 'DELETE' }),
+
+  // per-video sound placements
+  getVideoSounds: (id: string) => request<SoundPlacement[]>(`/workspaces/${id}/video/sounds`),
+  placeSound: (id: string, soundId: string, atSec: number) =>
+    request<SoundPlacement>(`/workspaces/${id}/video/sounds`, {
+      method: 'POST',
+      body: JSON.stringify({ soundId, atSec })
+    }),
+  updatePlacement: (id: string, placementId: string, patch: { atSec?: number; volume?: number }) =>
+    request<SoundPlacement[]>(`/workspaces/${id}/video/sounds/${placementId}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch)
+    }),
+  removePlacement: (id: string, placementId: string) =>
+    request<SoundPlacement[]>(`/workspaces/${id}/video/sounds/${placementId}`, { method: 'DELETE' }),
 
   // scenes (canonical breakdown)
   getScenes: (id: string) => request<Scene[]>(`/workspaces/${id}/scenes`),

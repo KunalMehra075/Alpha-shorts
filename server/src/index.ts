@@ -8,6 +8,10 @@ import { HttpError, getStats } from './lib/store';
 import { listVoices } from './lib/voices';
 import { workspacesRouter } from './routes/workspaces';
 import { templatesRouter } from './routes/templates';
+import { soundsRouter } from './routes/sounds';
+import { GLOBAL_SOUNDS_DIR } from './lib/sounds';
+import { mediaRouter } from './routes/media';
+import { GLOBAL_MEDIA_DIR } from './lib/media';
 
 // Load the project-root .env (ELEVENLABS_API_KEY, FFPROBE_BIN, …). The server
 // runs from server/, so point dotenv at the root explicitly.
@@ -24,9 +28,15 @@ app.get('/api/stats', (_req, res) => res.json(getStats()));
 app.get('/api/voices', (_req, res) => res.json(listVoices()));
 app.use('/api/workspaces', workspacesRouter);
 app.use('/api/prompt-templates', templatesRouter);
+app.use('/api/sounds', soundsRouter);
+app.use('/api/media-library', mediaRouter);
 
 // Serve workspace media read-only at /media/<workspaceId>/...
 app.use('/media', express.static(WORKSPACES_DIR));
+// Serve the global sound library read-only at /sounds/...
+app.use('/sounds', express.static(GLOBAL_SOUNDS_DIR));
+// Serve the global media library (images/videos/music) read-only at /library/...
+app.use('/library', express.static(GLOBAL_MEDIA_DIR));
 
 // 404 for unknown API routes
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));

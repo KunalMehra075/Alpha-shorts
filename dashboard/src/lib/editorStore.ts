@@ -33,6 +33,7 @@ export type WorkspaceEditor = {
     preset: string | null;
     music: MusicSettings;
     captionsEnabled: boolean;
+    soundsEnabled: boolean;
   };
 };
 
@@ -45,7 +46,7 @@ const emptyMusic = (): MusicSettings => ({
 });
 
 const emptyEditor = (): WorkspaceEditor => ({
-  timeline: { scenes: {}, preset: null, music: emptyMusic(), captionsEnabled: true }
+  timeline: { scenes: {}, preset: null, music: emptyMusic(), captionsEnabled: true, soundsEnabled: true }
 });
 
 // Stable reference for the "no data yet" case, so selectors don't loop in React.
@@ -61,6 +62,7 @@ type EditorState = {
   applyPreset: (id: string, presetName: string, scenes: Scene[]) => void;
   setMusic: (id: string, patch: Partial<MusicSettings>) => void;
   toggleCaptions: (id: string, enabled: boolean) => void;
+  toggleSounds: (id: string, enabled: boolean) => void;
 };
 
 // Immutably update a workspace's editor slice, creating it if missing.
@@ -162,6 +164,14 @@ export const useEditorStore = create<EditorState>()(
           withWs(s, id, (ws) => ({
             ...ws,
             timeline: { ...ws.timeline, captionsEnabled: enabled }
+          }))
+        ),
+
+      toggleSounds: (id, enabled) =>
+        set((s) =>
+          withWs(s, id, (ws) => ({
+            ...ws,
+            timeline: { ...ws.timeline, soundsEnabled: enabled }
           }))
         )
     }),

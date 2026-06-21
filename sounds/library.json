@@ -1,0 +1,42 @@
+[
+  {
+    "id": "na5um2e3s9",
+    "name": "Pop.mp3",
+    "file": "samples/na5um2e3s9.mp3",
+    "durationSec": 0.2,
+    "sizeBytes": 0,
+    "createdAt": "2026-06-21T09:39:46.872Z"
+  },
+  {
+    "id": "z3y64rztz5",
+    "name": "Click.mp3",
+    "file": "samples/z3y64rztz5.mp3",
+    "durationSec": 0.1,
+    "sizeBytes": 0,
+    "createdAt": "2026-06-21T09:39:46.907Z"
+  },
+  {
+    "id": "lk3chpolzs",
+    "name": "Boop.mp3",
+    "file": "samples/lk3chpolzs.mp3",
+    "durationSec": 0.3,
+    "sizeBytes": 0,
+    "createdAt": "2026-06-21T09:39:46.942Z"
+  },
+  {
+    "id": "l60fgj6q3y",
+    "name": "Ding.mp3",
+    "file": "samples/l60fgj6q3y.mp3",
+    "durationSec": 0.6,
+    "sizeBytes": 0,
+    "createdAt": "2026-06-21T09:39:46.980Z"
+  },
+  {
+    "id": "qo6v62tlnc",
+    "name": "Chime.mp3",
+    "file": "samples/qo6v62tlnc.mp3",
+    "durationSec": 0.9,
+    "sizeBytes": 0,
+    "createdAt": "2026-06-21T09:39:47.018Z"
+  }
+]

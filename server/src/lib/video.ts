@@ -15,6 +15,7 @@ import {
   getMusic,
   getRenders,
   getScenes,
+  getSounds,
   musicDir,
   rendersDir,
   setWorkspaceMusic,
@@ -99,6 +100,7 @@ export type RenderTimeline = {
   captionsEnabled: boolean;
   preset: string | null;
   music?: { enabled: boolean; volume: number; fadeIn: boolean; fadeOut: boolean };
+  soundsEnabled?: boolean;
 };
 
 const MUSIC_RE = /\.(mp3|wav|m4a|aac|ogg)$/i;
@@ -214,6 +216,18 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
     };
   }
 
+  // Sound effects placed on the timeline (staged like other media).
+  let sounds: { src: string; atSec: number; volume: number }[] = [];
+  if (timeline.soundsEnabled !== false) {
+    sounds = getSounds(id)
+      .filter((p) => existsSync(join(workspaceDir(id), p.file)))
+      .map((p, i) => ({
+        src: stage(join(workspaceDir(id), p.file), `sound-${i}`),
+        atSec: p.atSec,
+        volume: p.volume ?? 1
+      }));
+  }
+
   return {
     width: cfg.render.width ?? 1080,
     height: cfg.render.height ?? 1920,
@@ -223,6 +237,7 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
     narration,
     music,
     captions,
+    sounds,
     scenes: outScenes,
     _config: cfg
   };

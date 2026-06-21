@@ -11,6 +11,7 @@ import {
   Music,
   Pause,
   Play,
+  Plus,
   Sparkles,
   Trash2
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
@@ -33,10 +35,16 @@ import {
   useDeleteRender,
   useLibrary,
   useMusicFromLibrary,
+  usePlaceSound,
+  useRemovePlacement,
   useRenderVideo,
   useRenders,
   useScenes,
-  useUploadMusic
+  useSoundLibrary,
+  useUpdatePlacement,
+  useUploadMusic,
+  useUploadSound,
+  useVideoSounds
 } from '@/lib/queries';
 import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
 import { placeholderDataUri } from '@/lib/placeholder';
@@ -48,7 +56,7 @@ import {
   type Transition
 } from '@/lib/editorOptions';
 import { useEditorStore, useWorkspaceEditor } from '@/lib/editorStore';
-import type { CaptionSettings, RenderRecord, Scene, VisualType } from '@/lib/types';
+import type { CaptionSettings, RenderRecord, Scene, SoundPlacement, VisualType } from '@/lib/types';
 
 type Clip = {
   index: number;
@@ -125,6 +133,19 @@ export function VideoEditorPage() {
   const { data: libraryData } = useLibrary(id);
   const audioLibrary = (libraryData ?? []).filter((i) => i.kind === 'audio');
   const [musicPickerOpen, setMusicPickerOpen] = useState(false);
+
+  // Sound effects: global library (palette) + per-video placements.
+  const toggleSounds = useEditorStore((s) => s.toggleSounds);
+  const soundsEnabled = editor.timeline.soundsEnabled ?? true;
+  const { data: soundLibData } = useSoundLibrary();
+  const soundLib = soundLibData ?? [];
+  const { data: placementsData } = useVideoSounds(id);
+  const placements = placementsData ?? [];
+  const placeSound = usePlaceSound(id);
+  const updatePlacement = useUpdatePlacement(id);
+  const removePlacement = useRemovePlacement(id);
+  const uploadSound = useUploadSound();
+  const [soundSearch, setSoundSearch] = useState('');
 
   // Real media for the preview player (served from the workspace).
   const narrationSrc = audioTake ? `/media/${id}/${audioTake.file}` : undefined;
@@ -203,6 +224,9 @@ export function VideoEditorPage() {
               narrationSrc={narrationSrc}
               musicSrc={musicSrc}
               musicVolume={music.volume / 100}
+              placements={placements}
+              soundsEnabled={soundsEnabled}
+              workspaceId={id}
               onScrubToScene={setSelected}
             />
           </CardContent>
@@ -222,6 +246,7 @@ export function VideoEditorPage() {
           <Card>
             <CardContent className="flex flex-col gap-4 p-5">
               <h3 className="text-sm font-semibold">Audio</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
               <div className="flex items-center gap-3 rounded-lg border border-border p-3">
                 <div className="flex size-9 items-center justify-center rounded-md bg-accent/15">
                   <Music className="size-4 text-accent" />
@@ -238,6 +263,24 @@ export function VideoEditorPage() {
                 <Badge variant="accent" className="ml-2">
                   primary
                 </Badge>
+              </div>
+
+              {/* Captions (beside Narration) */}
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <CaptionsIcon className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Captions</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {caps?.hasTranscript ? `${caps.lines.length} lines` : 'None yet'} ·{' '}
+                      <button className="underline hover:text-accent" onClick={() => navigate(`/w/${id}/caption`)}>
+                        edit style
+                      </button>
+                    </p>
+                  </div>
+                </div>
+                <Switch checked={captionsEnabled} onCheckedChange={(v) => toggleCaptions(id, v)} />
+              </div>
               </div>
 
               <div className="rounded-lg border border-border p-3">
@@ -342,30 +385,73 @@ export function VideoEditorPage() {
                 )}
               </div>
 
-              {/* Captions */}
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div className="flex items-center gap-2">
-                  <CaptionsIcon className="size-4 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">Captions</p>
-                    <p className="text-xs text-muted-foreground">
-                      {caps?.hasTranscript
-                        ? `${caps.lines.length} lines`
-                        : "None yet"}{" "}
-                      ·{" "}
-                      <button
-                        className="underline hover:text-accent"
-                        onClick={() => navigate(`/w/${id}/caption`)}
-                      >
-                        edit style
-                      </button>
-                    </p>
+              {/* Add Sounds */}
+              <div className="rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <LibraryIcon className="size-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Sound effects</span>
                   </div>
+                  <Switch checked={soundsEnabled} onCheckedChange={(v) => toggleSounds(id, v)} />
                 </div>
-                <Switch
-                  checked={captionsEnabled}
-                  onCheckedChange={(v) => toggleCaptions(id, v)}
-                />
+                {soundsEnabled && (
+                  <div className="mt-3 grid gap-2">
+                    <div className="flex gap-2">
+                      <Input
+                        value={soundSearch}
+                        onChange={(e) => setSoundSearch(e.target.value)}
+                        placeholder="Search sounds…"
+                        className="h-8 text-sm"
+                      />
+                      <label className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md border border-border px-2.5 text-sm hover:bg-muted">
+                        {uploadSound.isPending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!f) return;
+                            try {
+                              await uploadSound.mutateAsync(f);
+                              toast.success('Sound added to library');
+                            } catch (err: any) {
+                              toast.error(String(err.message ?? err));
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Drag a sound onto the audio track below the timeline.
+                    </p>
+                    <div className="grid max-h-[180px] grid-cols-2 gap-2 overflow-y-auto">
+                      {soundLib
+                        .filter((s) => s.name.toLowerCase().includes(soundSearch.toLowerCase()))
+                        .map((s) => (
+                          <div
+                            key={s.id}
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('application/x-sound-id', s.id);
+                              e.dataTransfer.effectAllowed = 'copy';
+                            }}
+                            title="Drag onto the audio track"
+                            className="flex cursor-grab items-center justify-between gap-1 rounded-md border border-border px-2 py-1.5 text-xs hover:border-accent/50 active:cursor-grabbing"
+                          >
+                            <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                            <span className="shrink-0 text-muted-foreground">{s.durationSec}s</span>
+                          </div>
+                        ))}
+                      {soundLib.length === 0 && (
+                        <p className="col-span-full py-3 text-center text-xs text-muted-foreground">
+                          No sounds yet — add one with +.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -424,6 +510,18 @@ export function VideoEditorPage() {
               </div>
             ))}
           </div>
+
+          {/* Sound effects track */}
+          <SoundTrack
+            id={id}
+            total={total}
+            placements={placements}
+            enabled={soundsEnabled}
+            onPlace={(soundId, atSec) => placeSound.mutate({ soundId, atSec })}
+            onMove={(placementId, atSec) => updatePlacement.mutate({ placementId, patch: { atSec } })}
+            onVolume={(placementId, volume) => updatePlacement.mutate({ placementId, patch: { volume } })}
+            onRemove={(placementId) => removePlacement.mutate(placementId)}
+          />
         </CardContent>
       </Card>
 
@@ -446,7 +544,8 @@ export function VideoEditorPage() {
             volume: music.volume,
             fadeIn: music.fadeIn,
             fadeOut: music.fadeOut
-          }
+          },
+          soundsEnabled
         })}
         onProceed={() => navigate(`/w/${id}/upload`)}
       />
@@ -613,6 +712,9 @@ function EditorPreview({
   narrationSrc,
   musicSrc,
   musicVolume = 0.3,
+  placements = [],
+  soundsEnabled = true,
+  workspaceId,
   onScrubToScene
 }: {
   clips: Clip[];
@@ -623,6 +725,9 @@ function EditorPreview({
   narrationSrc?: string;
   musicSrc?: string;
   musicVolume?: number;
+  placements?: { id: string; file: string; atSec: number; volume: number }[];
+  soundsEnabled?: boolean;
+  workspaceId: string;
   onScrubToScene: (i: number) => void;
 }) {
   const [time, setTime] = useState(0);
@@ -631,6 +736,33 @@ function EditorPreview({
   const last = useRef(0);
   const narrRef = useRef<HTMLAudioElement>(null);
   const musicRef = useRef<HTMLAudioElement>(null);
+  const sfxRefs = useRef<Record<string, HTMLAudioElement | null>>({});
+  const lastT = useRef(0);
+
+  // Fire each placed sound when the playhead crosses its start time.
+  useEffect(() => {
+    if (!playing) {
+      lastT.current = time;
+      return;
+    }
+    const prev = lastT.current;
+    lastT.current = time;
+    if (time < prev || !soundsEnabled) return; // wrapped / disabled
+    for (const p of placements) {
+      if (prev <= p.atSec && p.atSec < time) {
+        const el = sfxRefs.current[p.id];
+        if (el) {
+          try {
+            el.currentTime = 0;
+            el.volume = Math.max(0, Math.min(1, p.volume ?? 1));
+            el.play().catch(() => {});
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+  }, [time, playing, soundsEnabled, placements]);
 
   const frameRef = useRef<HTMLDivElement>(null);
   const [frameW, setFrameW] = useState(300);
@@ -804,6 +936,18 @@ function EditorPreview({
       {/* Real audio elements driven by the transport (hidden). */}
       {narrationSrc && <audio ref={narrRef} src={narrationSrc} preload="auto" className="hidden" />}
       {musicSrc && <audio ref={musicRef} src={musicSrc} loop preload="auto" className="hidden" />}
+      {soundsEnabled &&
+        placements.map((p) => (
+          <audio
+            key={p.id}
+            ref={(el) => {
+              sfxRefs.current[p.id] = el;
+            }}
+            src={`/media/${workspaceId}/${p.file}`}
+            preload="auto"
+            className="hidden"
+          />
+        ))}
     </div>
   );
 }
@@ -814,6 +958,7 @@ type RenderPayload = {
   captionsEnabled: boolean;
   preset: string | null;
   music: { enabled: boolean; volume: number; fadeIn: boolean; fadeOut: boolean };
+  soundsEnabled: boolean;
 };
 
 function RenderSection({
@@ -978,6 +1123,186 @@ function RenderCard({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Sound effects track (below the timeline) ──────────────────────────────────
+function SoundTrack({
+  id: _id,
+  total,
+  placements,
+  enabled,
+  onPlace,
+  onMove,
+  onVolume,
+  onRemove
+}: {
+  id: string;
+  total: number;
+  placements: SoundPlacement[];
+  enabled: boolean;
+  onPlace: (soundId: string, atSec: number) => void;
+  onMove: (placementId: string, atSec: number) => void;
+  onVolume: (placementId: string, volume: number) => void;
+  onRemove: (placementId: string) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [dragPid, setDragPid] = useState<string | null>(null);
+  const [dragAt, setDragAt] = useState(0);
+
+  const xToSec = (clientX: number) => {
+    const el = trackRef.current;
+    if (!el || total <= 0) return 0;
+    const r = el.getBoundingClientRect();
+    return Math.max(0, Math.min(total, ((clientX - r.left) / r.width) * total));
+  };
+
+  useEffect(() => {
+    if (!dragPid) return;
+    const move = (e: PointerEvent) => setDragAt(xToSec(e.clientX));
+    const up = (e: PointerEvent) => {
+      onMove(dragPid, xToSec(e.clientX));
+      setDragPid(null);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragPid, total]);
+
+  const sel = placements.find((p) => p.id === selected) ?? null;
+
+  // One tick per whole second; labels at multiples of 5.
+  const ticks: number[] = [];
+  for (let s = 0; s <= Math.floor(total); s++) ticks.push(s);
+
+  return (
+    <div className={cn('mt-4', !enabled && 'opacity-50')}>
+      <span className="mb-1 block text-xs font-medium text-muted-foreground">
+        Sound effects track{!enabled && ' (disabled)'}
+      </span>
+      <div
+        ref={trackRef}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('application/x-sound-id')) {
+            e.preventDefault();
+            setDragOver(true);
+          }
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          const sid = e.dataTransfer.getData('application/x-sound-id');
+          if (sid) onPlace(sid, xToSec(e.clientX));
+        }}
+        className={cn(
+          'relative h-14 w-full overflow-hidden rounded-lg border border-dashed',
+          dragOver ? 'border-accent bg-accent/10' : 'border-border bg-muted/30'
+        )}
+      >
+        {/* 5-second gridlines, behind the blocks */}
+        <div className="pointer-events-none absolute inset-0">
+          {ticks
+            .filter((s) => s > 0 && s % 5 === 0)
+            .map((s) => (
+              <div
+                key={s}
+                className="absolute bottom-0 top-0 w-px bg-border/40"
+                style={{ left: `${total > 0 ? (s / total) * 100 : 0}%` }}
+              />
+            ))}
+        </div>
+        {placements.length === 0 && !dragOver && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground">
+            Drag a sound here to place it on the video
+          </div>
+        )}
+        {placements.map((p) => {
+          const at = dragPid === p.id ? dragAt : p.atSec;
+          const left = total > 0 ? (at / total) * 100 : 0;
+          const width = total > 0 ? Math.max(4, (Math.max(0.3, p.durationSec) / total) * 100) : 8;
+          return (
+            <div
+              key={p.id}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                setSelected(p.id);
+                setDragPid(p.id);
+                setDragAt(p.atSec);
+              }}
+              title={`${p.name} @ ${at.toFixed(1)}s`}
+              style={{ left: `${left}%`, width: `${width}%` }}
+              className={cn(
+                'absolute bottom-1.5 top-1.5 flex cursor-grab items-center gap-1 overflow-hidden rounded-md border px-1.5 text-[10px] active:cursor-grabbing',
+                selected === p.id
+                  ? 'border-accent bg-accent/25 ring-1 ring-accent'
+                  : 'border-accent/40 bg-accent/15'
+              )}
+            >
+              <Music className="size-3 shrink-0 text-accent" />
+              <span className="truncate">{p.name}</span>
+            </div>
+          );
+        })}
+      </div>
+      {/* Per-second ruler; numbered every 5s */}
+      {total > 0 && (
+        <div className="relative mt-1 h-5 w-full select-none">
+          {ticks.map((s) => {
+            const left = (s / total) * 100;
+            const major = s % 5 === 0;
+            return (
+              <div
+                key={s}
+                className="absolute top-0 flex flex-col items-center"
+                style={{ left: `${left}%`, transform: 'translateX(-50%)' }}
+              >
+                <div className={cn('w-px bg-border', major ? 'h-2' : 'h-1')} />
+                {major && (
+                  <span className="mt-0.5 text-[9px] leading-none tabular-nums text-muted-foreground">
+                    {s}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {sel && (
+        <div className="mt-2 flex items-center gap-3 rounded-lg border border-border p-2 text-xs">
+          <Music className="size-4 shrink-0 text-accent" />
+          <span className="truncate font-medium">{sel.name}</span>
+          <span className="shrink-0 text-muted-foreground">@ {sel.atSec.toFixed(1)}s</span>
+          <div className="ml-2 flex items-center gap-2">
+            <span className="text-muted-foreground">Vol</span>
+            <Slider
+              value={Math.round((sel.volume ?? 1) * 100)}
+              min={0}
+              max={100}
+              onValueChange={(v) => onVolume(sel.id, v / 100)}
+              className="w-28"
+            />
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto size-7 text-destructive"
+            onClick={() => {
+              onRemove(sel.id);
+              setSelected(null);
+            }}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,7 +15,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': { target: API_TARGET, changeOrigin: true },
-      '/media': { target: API_TARGET, changeOrigin: true }
+      '/media': { target: API_TARGET, changeOrigin: true },
+      '/sounds': { target: API_TARGET, changeOrigin: true },
+      '/library': { target: API_TARGET, changeOrigin: true }
     }
   }
 });

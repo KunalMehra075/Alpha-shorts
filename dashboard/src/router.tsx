@@ -1,8 +1,12 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { RootLayout } from '@/layouts/RootLayout';
 import { WorkspaceLayout } from '@/layouts/WorkspaceLayout';
-import { HomePage } from '@/pages/HomePage';
-import { TemplatesPage } from '@/pages/TemplatesPage';
+import { DashboardPage } from '@/pages/DashboardPage';
+import { WorkspacesPage } from '@/pages/WorkspacesPage';
+import { AnalyticsPage } from '@/pages/AnalyticsPage';
+import { AssetsPage } from '@/pages/AssetsPage';
+import { AudiosPage } from '@/pages/AudiosPage';
+import { PromptsPage } from '@/pages/PromptsPage';
 import { ScriptPage } from '@/pages/ScriptPage';
 import { AudioPage } from '@/pages/AudioPage';
 import { CaptionPage } from '@/pages/CaptionPage';
@@ -15,8 +19,14 @@ export const router = createBrowserRouter([
     path: '/',
     element: <RootLayout />,
     children: [
-      { index: true, element: <HomePage /> },
-      { path: 'templates', element: <TemplatesPage /> },
+      { index: true, element: <DashboardPage /> },
+      { path: 'workspaces', element: <WorkspacesPage /> },
+      { path: 'analytics', element: <AnalyticsPage /> },
+      { path: 'assets', element: <AssetsPage /> },
+      { path: 'audios', element: <AudiosPage /> },
+      { path: 'prompts', element: <PromptsPage /> },
+      // Back-compat: old /templates path → Prompts
+      { path: 'templates', element: <Navigate to="/prompts" replace /> },
       {
         path: 'w/:id',
         element: <WorkspaceLayout />,

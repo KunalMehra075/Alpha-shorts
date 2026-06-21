@@ -53,7 +53,21 @@ const MusicTrack = ({ music }) => {
   );
 };
 
-export const ShortsVideo = ({ scenes = [], narration, music, transitionFrames = 15, captions }) => {
+// Sound effects placed at absolute times on the timeline.
+const SoundLayer = ({ sounds }) => {
+  const { fps } = useVideoConfig();
+  return (
+    <>
+      {sounds.map((s, i) => (
+        <Sequence key={i} from={Math.max(0, Math.round((s.atSec || 0) * fps))} name={`sfx-${i}`}>
+          <Audio src={staticFile(s.src)} volume={s.volume ?? 1} />
+        </Sequence>
+      ))}
+    </>
+  );
+};
+
+export const ShortsVideo = ({ scenes = [], narration, music, transitionFrames = 15, captions, sounds }) => {
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {scenes.map((scene) => (
@@ -82,6 +96,9 @@ export const ShortsVideo = ({ scenes = [], narration, music, transitionFrames = 
 
       {/* Optional background music, looped, underneath the narration. */}
       {music ? <MusicTrack music={music} /> : null}
+
+      {/* Timeline sound effects. */}
+      {Array.isArray(sounds) && sounds.length ? <SoundLayer sounds={sounds} /> : null}
     </AbsoluteFill>
   );
 };

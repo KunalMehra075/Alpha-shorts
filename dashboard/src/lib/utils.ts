@@ -10,6 +10,23 @@ export function mediaUrl(id: string, file: string) {
   return `/media/${id}/${file}`;
 }
 
+// URL for a global media-library file (served by the API at /library/<file>).
+export function libraryUrl(file: string) {
+  return `/library/${file}`;
+}
+
+export function formatBytes(bytes: number) {
+  if (!bytes) return '—';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
 export function formatDate(iso: string) {
   try {
     return new Date(iso).toLocaleString(undefined, {

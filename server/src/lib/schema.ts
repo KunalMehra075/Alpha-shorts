@@ -139,6 +139,18 @@ export const LibraryItem = z.object({
 });
 export type LibraryItem = z.infer<typeof LibraryItem>;
 
+// A sound effect placed on the video timeline at an absolute time (copied into
+// the workspace from the global sound library).
+export const SoundPlacement = z.object({
+  id: z.string(),
+  name: z.string().default(''),
+  file: z.string(), // workspace-relative, e.g. 'sounds/<id>.mp3'
+  atSec: z.number().default(0),
+  durationSec: z.number().default(0),
+  volume: z.number().default(1)
+});
+export type SoundPlacement = z.infer<typeof SoundPlacement>;
+
 export const SceneAssets = z.object({
   sceneNumber: z.number(),
   keywords: z.array(z.string()).default([]),
@@ -216,6 +228,8 @@ export const Manifest = z.object({
     .default({ file: null, name: '' }),
   // User-dropped media (images/videos/audio) available across steps.
   library: z.array(LibraryItem).default([]),
+  // Sound effects placed on the video timeline.
+  sounds: z.array(SoundPlacement).default([]),
   // Canonical, editable scene-by-scene breakdown (built in the Assets step from
   // the script OR the caption transcript). `.default([])` so old manifests parse.
   scenes: z.array(Scene).default([]),

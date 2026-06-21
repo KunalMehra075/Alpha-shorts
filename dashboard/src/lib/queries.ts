@@ -4,7 +4,7 @@ import {
   useQueryClient
 } from '@tanstack/react-query';
 import { api } from './api';
-import type { Language, Scene, ScriptVersion } from './types';
+import type { Language, MediaKind, Scene, ScriptVersion } from './types';
 
 export const qk = {
   workspaces: ['workspaces'] as const,
@@ -231,6 +231,86 @@ export function useRenderCaptionOverlay(id: string) {
   return useMutation({
     mutationFn: () => api.renderCaptionOverlay(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.captions(id) })
+  });
+}
+
+// ── Global sound library ──────────────────────────────────────────────────────
+export function useSoundLibrary() {
+  return useQuery({ queryKey: ['sound-library'] as const, queryFn: () => api.listSounds() });
+}
+
+export function useUploadSound() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.uploadSound(file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sound-library'] })
+  });
+}
+
+export function useDeleteSound() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (soundId: string) => api.deleteSound(soundId),
+    onSuccess: (items) => qc.setQueryData(['sound-library'], items)
+  });
+}
+
+// ── Global media library (images / videos / music) ────────────────────────────
+export function useMediaLibrary(kind?: MediaKind) {
+  return useQuery({
+    queryKey: ['media-library', kind ?? 'all'] as const,
+    queryFn: () => api.listMedia(kind)
+  });
+}
+
+export function useUploadMedia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.uploadMedia(file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['media-library'] })
+  });
+}
+
+export function useDeleteMedia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteMedia(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['media-library'] })
+  });
+}
+
+// ── Per-video sound placements ────────────────────────────────────────────────
+export function useVideoSounds(id: string | undefined) {
+  return useQuery({
+    queryKey: ['video-sounds', id ?? ''] as const,
+    queryFn: () => api.getVideoSounds(id!),
+    enabled: !!id
+  });
+}
+
+export function usePlaceSound(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ soundId, atSec }: { soundId: string; atSec: number }) =>
+      api.placeSound(id, soundId, atSec),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['video-sounds', id] })
+  });
+}
+
+export function useUpdatePlacement(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ placementId, patch }: { placementId: string; patch: { atSec?: number; volume?: number } }) =>
+      api.updatePlacement(id, placementId, patch),
+    onSuccess: (items) => qc.setQueryData(['video-sounds', id], items)
+  });
+}
+
+export function useRemovePlacement(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (placementId: string) => api.removePlacement(id, placementId),
+    onSuccess: (items) => qc.setQueryData(['video-sounds', id], items)
   });
 }
 

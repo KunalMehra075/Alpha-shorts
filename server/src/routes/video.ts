@@ -2,7 +2,14 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { ah } from '../lib/async';
-import { deleteRender, readManifest } from '../lib/store';
+import {
+  deleteRender,
+  getSounds,
+  readManifest,
+  removeSoundPlacement,
+  updateSoundPlacement
+} from '../lib/store';
+import { placeSound } from '../lib/sounds';
 import {
   clearMusic,
   getRenderStatus,
@@ -37,8 +44,15 @@ const RenderBody = z.object({
         fadeIn: z.boolean().default(true),
         fadeOut: z.boolean().default(true)
       })
-      .optional()
+      .optional(),
+    soundsEnabled: z.boolean().optional()
   })
+});
+
+const PlaceBody = z.object({ soundId: z.string().min(1), atSec: z.number().min(0).default(0) });
+const PlacementPatch = z.object({
+  atSec: z.number().min(0).optional(),
+  volume: z.number().min(0).max(1).optional()
 });
 
 // GET all render records (with live progress overlaid).
@@ -87,6 +101,38 @@ videoRouter.delete(
   '/music',
   ah((req, res) => {
     res.json(clearMusic({ id: pid(req) }));
+  })
+);
+
+// ── Timeline sound effects ────────────────────────────────────────────────────
+videoRouter.get(
+  '/sounds',
+  ah((req, res) => {
+    readManifest(pid(req));
+    res.json(getSounds(pid(req)));
+  })
+);
+
+videoRouter.post(
+  '/sounds',
+  ah(async (req, res) => {
+    const body = PlaceBody.parse(req.body);
+    res.status(201).json(await placeSound({ id: pid(req), soundId: body.soundId, atSec: body.atSec }));
+  })
+);
+
+videoRouter.put(
+  '/sounds/:placementId',
+  ah((req, res) => {
+    const body = PlacementPatch.parse(req.body);
+    res.json(updateSoundPlacement(pid(req), req.params.placementId, body));
+  })
+);
+
+videoRouter.delete(
+  '/sounds/:placementId',
+  ah((req, res) => {
+    res.json(removeSoundPlacement(pid(req), req.params.placementId));
   })
 );
 

@@ -494,6 +494,49 @@ export function deleteLibraryItem(id: string, itemId: string): Manifest['library
   return m.library;
 }
 
+// ── Timeline sound effects (per-video placements) ─────────────────────────────
+
+export function soundsDir(id: string) {
+  return join(workspaceDir(id), 'sounds');
+}
+
+export function getSounds(id: string) {
+  return readManifest(id).sounds;
+}
+
+export function addSoundPlacement(id: string, rec: Manifest['sounds'][number]): Manifest['sounds'] {
+  const m = readManifest(id);
+  m.sounds.push(rec);
+  m.sounds.sort((a, b) => a.atSec - b.atSec);
+  writeManifest(m);
+  return m.sounds;
+}
+
+export function updateSoundPlacement(
+  id: string,
+  placementId: string,
+  patch: Partial<Manifest['sounds'][number]>
+): Manifest['sounds'] {
+  const m = readManifest(id);
+  const rec = m.sounds.find((s) => s.id === placementId);
+  if (!rec) throw new HttpError(404, `Sound placement "${placementId}" not found.`);
+  if (patch.atSec !== undefined) rec.atSec = Math.max(0, patch.atSec);
+  if (patch.volume !== undefined) rec.volume = Math.min(1, Math.max(0, patch.volume));
+  m.sounds.sort((a, b) => a.atSec - b.atSec);
+  writeManifest(m);
+  return m.sounds;
+}
+
+export function removeSoundPlacement(id: string, placementId: string): Manifest['sounds'] {
+  const m = readManifest(id);
+  const rec = m.sounds.find((s) => s.id === placementId);
+  if (!rec) throw new HttpError(404, `Sound placement "${placementId}" not found.`);
+  removePath(join(workspaceDir(id), rec.file));
+  m.sounds = m.sounds.filter((s) => s.id !== placementId);
+  writeManifest(m);
+  return m.sounds;
+}
+
 // ── Background music ──────────────────────────────────────────────────────────
 
 export function musicDir(id: string) {

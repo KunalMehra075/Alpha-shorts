@@ -12,7 +12,7 @@ import { api } from '@/lib/api';
 import { qk, useTemplates } from '@/lib/queries';
 import type { PromptTemplate } from '@/lib/types';
 
-export function TemplatesPage() {
+export function PromptsPage() {
   const qc = useQueryClient();
   const { data: templates } = useTemplates();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -38,10 +38,10 @@ export function TemplatesPage() {
 
   const create = async () => {
     try {
-      const tpl = await api.createTemplate('New Template', '');
+      const tpl = await api.createTemplate('New Prompt', '');
       await refresh();
       setSelectedId(tpl.id);
-      toast.success('Template created');
+      toast.success('Prompt created');
     } catch (e: any) {
       toast.error(String(e.message ?? e));
     }
@@ -76,13 +76,13 @@ export function TemplatesPage() {
     <div className="mx-auto max-w-6xl px-8 py-8">
       <div className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Prompt Templates</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">Prompts</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Reusable AI prompts you can load into any workspace's Script Generator.
           </p>
         </div>
         <Button variant="primary" onClick={create}>
-          <Plus className="size-4" /> New Template
+          <Plus className="size-4" /> New Prompt
         </Button>
       </div>
 
@@ -91,7 +91,7 @@ export function TemplatesPage() {
         <Card>
           <CardContent className="p-2">
             {(templates?.length ?? 0) === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No templates yet.</p>
+              <p className="p-4 text-sm text-muted-foreground">No prompts yet.</p>
             ) : (
               <ul className="flex flex-col gap-1">
                 {templates!.map((t) => (
@@ -119,7 +119,7 @@ export function TemplatesPage() {
             {!selected ? (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-center text-muted-foreground">
                 <FileText className="size-7" />
-                <p className="text-sm">Select or create a template to edit.</p>
+                <p className="text-sm">Select or create a prompt to edit.</p>
               </div>
             ) : (
               <div className="flex flex-col gap-4">
