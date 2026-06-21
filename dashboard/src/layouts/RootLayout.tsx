@@ -39,8 +39,9 @@ export function RootLayout() {
         <ThemeToggle />
       </aside>
 
-      {/* Content */}
-      <main className="flex-1 overflow-y-auto">
+      {/* Content — min-w-0 lets it shrink so wide children scroll internally
+          instead of forcing horizontal page overflow. */}
+      <main className="min-w-0 flex-1 overflow-y-auto">
         <Outlet />
       </main>
     </div>

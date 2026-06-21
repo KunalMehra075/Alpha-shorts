@@ -93,7 +93,7 @@ export function WorkspaceLayout() {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto px-6 pb-10">
+      <div className="min-w-0 flex-1 overflow-y-auto px-6 pb-10">
         <Outlet context={{ workspace, id: workspace.id } satisfies Ctx} />
       </div>
     </div>

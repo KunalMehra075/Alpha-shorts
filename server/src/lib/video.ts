@@ -1,0 +1,309 @@
+import { copyFileSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { extname, join } from 'node:path';
+import { customAlphabet } from 'nanoid';
+// Engine module (plain JS from the CLI pipeline).
+import { renderVideo } from '../../../src/lib/remotion-render.js';
+import { ensureDir, existsSync, readJsonOr } from './fsx';
+import { CONFIG_DIR, ROOT, workspaceDir } from './paths';
+import {
+  HttpError,
+  addRender,
+  getAssetsState,
+  getAudioState,
+  getCaptions,
+  getCurrentScript,
+  getMusic,
+  getRenders,
+  musicDir,
+  rendersDir,
+  setWorkspaceMusic,
+  updateRender
+} from './store';
+import type { RenderRecord } from './schema';
+
+const shortId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
+
+const REMOTION_PUBLIC = join(ROOT, 'remotion', 'public');
+const STAGE_DIR = join(REMOTION_PUBLIC, 'assets');
+
+// ── Dashboard → engine effect/transition vocab ───────────────────────────────
+const IMAGE_EFFECT_MAP: Record<string, string> = {
+  'Zoom In': 'kenburns-in',
+  'Zoom Out': 'kenburns-out',
+  'Pan Left': 'pan-left',
+  'Pan Right': 'pan-right',
+  'Ken Burns': 'kenburns-in',
+  Parallax: 'parallax',
+  'Slow Rotate': 'parallax',
+  'Depth Effect': 'parallax'
+};
+const VIDEO_EFFECT_MAP: Record<string, string> = {
+  'Slow Zoom': 'zoom-in',
+  'Crop and Scale': 'zoom-in',
+  'Speed Adjustment': 'zoom-in',
+  'Motion Blur': 'drift',
+  'Dynamic Focus': 'zoom-out',
+  'Zoom In': 'zoom-in',
+  'Zoom Out': 'zoom-out'
+};
+const TRANSITION_MAP: Record<string, string> = {
+  Fade: 'fade',
+  Crossfade: 'fade',
+  'Blur Transition': 'fade',
+  Zoom: 'zoom',
+  'Scale Transition': 'zoom',
+  'Slide Left': 'slide-left',
+  Push: 'slide-left',
+  'Slide Right': 'slide-right'
+};
+
+const mapEffect = (name: string, kind: 'video' | 'image') =>
+  kind === 'video'
+    ? VIDEO_EFFECT_MAP[name] ?? 'zoom-in'
+    : IMAGE_EFFECT_MAP[name] ?? 'kenburns-in';
+const mapTransition = (name: string) => TRANSITION_MAP[name] ?? 'fade';
+
+// Mirror of the engine's animation-kind heuristic for asset-less scenes.
+function inferAnimationKind(keywords: string[], spokenLine: string) {
+  const text = `${(keywords || []).join(' ')} ${spokenLine || ''}`.toLowerCase();
+  if (/\?|question|mystery|why|how|what if/.test(text)) return 'question';
+  if (/scien|brain|neuron|atom|space|galaxy|dna|physics|chemi|tech/.test(text)) return 'science';
+  if (/ancient|wisdom|temple|veda|spiritual|sage|myth|sacred|dharma|god/.test(text)) return 'wisdom';
+  return 'generic';
+}
+
+function loadVideoConfig() {
+  const vg = readJsonOr<any>(join(CONFIG_DIR, 'video-gen.json'), {});
+  return {
+    render: vg.render ?? { width: 1080, height: 1920, fps: 30, codec: 'h264', crf: 18, imageFormat: 'jpeg' },
+    transitions: vg.transitions ?? { durationMs: 500 }
+  };
+}
+
+function freshStageDir() {
+  rmSync(STAGE_DIR, { recursive: true, force: true });
+  mkdirSync(STAGE_DIR, { recursive: true });
+}
+
+// Copy a workspace file into the Remotion public/assets dir, returning the
+// staticFile-relative path (forward slashes).
+function stage(absPath: string, name: string) {
+  const ext = extname(absPath) || '';
+  copyFileSync(absPath, join(STAGE_DIR, `${name}${ext}`));
+  return `assets/${name}${ext}`;
+}
+
+export type RenderTimeline = {
+  scenes: { index: number; effect: string; transition: string; durationSec: number }[];
+  captionsEnabled: boolean;
+  preset: string | null;
+  music?: { enabled: boolean; volume: number; fadeIn: boolean; fadeOut: boolean };
+};
+
+const MUSIC_RE = /\.(mp3|wav|m4a|aac|ogg)$/i;
+
+// Save an uploaded background-music track into the workspace.
+export function saveMusic(opts: { id: string; buffer: Buffer; originalName: string }) {
+  const { id, buffer, originalName } = opts;
+  if (!buffer?.length) throw new HttpError(400, 'Empty upload.');
+  ensureDir(musicDir(id));
+  const ext = (originalName.match(MUSIC_RE)?.[0] || '.mp3').toLowerCase();
+  const rel = `music/track${ext}`;
+  writeFileSync(join(workspaceDir(id), rel), buffer);
+  return setWorkspaceMusic(id, { file: rel, name: originalName }).music;
+}
+
+export function clearMusic(opts: { id: string }) {
+  const cur = getMusic(opts.id);
+  if (cur.file) rmSync(join(workspaceDir(opts.id), cur.file), { force: true });
+  return setWorkspaceMusic(opts.id, { file: null, name: '' }).music;
+}
+
+// Build the Remotion composition inputProps from the user's manifest choices +
+// the editor timeline. Stages all referenced files into remotion/public/assets.
+function buildInputProps(id: string, timeline: RenderTimeline) {
+  const script = getCurrentScript(id);
+  const scenes = script?.scenes ?? [];
+  if (!scenes.length) throw new HttpError(400, 'No script scenes to render.');
+
+  const assets = getAssetsState(id);
+  const caps = getCaptions(id);
+  const audio = getAudioState(id);
+  const cfg = loadVideoConfig();
+  const fps = cfg.render.fps ?? 30;
+  const transitionFrames = Math.max(1, Math.round(((cfg.transitions.durationMs ?? 500) / 1000) * fps));
+
+  const tlByIndex = new Map(timeline.scenes.map((s) => [s.index, s]));
+
+  freshStageDir();
+
+  let from = 0;
+  const outScenes = scenes.map((sc: any, i: number) => {
+    const num = sc.scene ?? i + 1;
+    const tl = tlByIndex.get(i);
+    const durationSec = Math.max(0.5, tl?.durationSec ?? sc.end - sc.start);
+    const durationInFrames = Math.max(1, Math.round(durationSec * fps));
+    const selected = assets.scenes.find((r) => r.sceneNumber === num)?.selected ?? null;
+
+    let visualType: 'image' | 'video' | 'animation' = 'animation';
+    let sceneAssets: { type: string; src: string }[] = [];
+    let effect: string | null = null;
+    let animationKind: string | null = null;
+
+    if (selected?.file && existsSync(join(workspaceDir(id), selected.file))) {
+      const kind = selected.kind === 'video' ? 'video' : 'image';
+      visualType = kind;
+      const src = stage(join(workspaceDir(id), selected.file), `scene-${i}`);
+      sceneAssets = [{ type: kind, src }];
+      effect = mapEffect(tl?.effect ?? '', kind);
+    } else {
+      animationKind = inferAnimationKind(sc.searchKeywords ?? [], sc.spokenLine ?? '');
+    }
+
+    const scene = {
+      index: i,
+      visualType,
+      from,
+      durationInFrames,
+      spokenLine: sc.spokenLine ?? '',
+      keywords: sc.searchKeywords ?? [],
+      transitionIn: mapTransition(tl?.transition ?? 'Fade'),
+      effect,
+      animationKind,
+      assets: sceneAssets
+    };
+    from += durationInFrames;
+    return scene;
+  });
+
+  // Narration: stage the current audio take, if any.
+  let narration: string | null = null;
+  if (audio.currentVersion != null) {
+    const take = audio.versions.find((v) => v.version === audio.currentVersion);
+    const abs = take && join(workspaceDir(id), take.file);
+    if (abs && existsSync(abs)) narration = stage(abs, 'narration');
+  }
+
+  const captions =
+    timeline.captionsEnabled && caps.hasTranscript && caps.lines.length
+      ? { enabled: true, lines: caps.lines, settings: caps.settings }
+      : null;
+
+  // Background music: staged from the workspace track when enabled.
+  let music: { src: string; volume: number; fadeIn: boolean; fadeOut: boolean } | null = null;
+  const mus = getMusic(id);
+  if (timeline.music?.enabled && mus.file && existsSync(join(workspaceDir(id), mus.file))) {
+    music = {
+      src: stage(join(workspaceDir(id), mus.file), 'music'),
+      volume: Math.max(0, Math.min(1, (timeline.music.volume ?? 30) / 100)),
+      fadeIn: !!timeline.music.fadeIn,
+      fadeOut: !!timeline.music.fadeOut
+    };
+  }
+
+  return {
+    width: cfg.render.width ?? 1080,
+    height: cfg.render.height ?? 1920,
+    fps,
+    durationInFrames: Math.max(1, from),
+    transitionFrames,
+    narration,
+    music,
+    captions,
+    scenes: outScenes,
+    _config: cfg
+  };
+}
+
+// ── Job manager (one render at a time; in-memory live progress) ───────────────
+type Live = { progress: number; phase: string };
+const active = new Map<string, Live>();
+let busy = false;
+const key = (id: string, rid: string) => `${id}:${rid}`;
+
+export function startRender(id: string, timeline: RenderTimeline): RenderRecord {
+  if (busy) throw new HttpError(409, 'A render is already in progress. Please wait for it to finish.');
+  const script = getCurrentScript(id);
+  if (!script?.scenes?.length) throw new HttpError(400, 'No script scenes to render.');
+
+  const rid = shortId();
+  const rec: RenderRecord = {
+    id: rid,
+    status: 'rendering',
+    progress: 0,
+    phase: 'bundling',
+    file: null,
+    durationSec: 0,
+    fps: 30,
+    resolution: '1080×1920',
+    sizeBytes: 0,
+    preset: timeline.preset ?? null,
+    createdAt: new Date().toISOString()
+  };
+  addRender(id, rec);
+  busy = true;
+  active.set(key(id, rid), { progress: 0, phase: 'bundling' });
+
+  // Fire-and-forget — the request returns immediately; the client polls.
+  void runRender(id, rid, timeline);
+  return rec;
+}
+
+async function runRender(id: string, rid: string, timeline: RenderTimeline) {
+  const k = key(id, rid);
+  try {
+    const inputProps = buildInputProps(id, timeline);
+    const cfg = inputProps._config;
+    ensureDir(rendersDir(id));
+    const rel = `renders/render-${rid}.mp4`;
+    const outPath = join(workspaceDir(id), rel);
+
+    await renderVideo({
+      inputProps,
+      config: cfg,
+      outPath,
+      onProgress: (p) => active.set(k, { progress: p.progress, phase: p.phase })
+    });
+
+    const sizeBytes = statSync(outPath).size;
+    const durationSec = Math.round((inputProps.durationInFrames / inputProps.fps) * 10) / 10;
+    updateRender(id, rid, {
+      status: 'completed',
+      progress: 100,
+      phase: 'rendering',
+      file: rel,
+      sizeBytes,
+      durationSec,
+      fps: inputProps.fps,
+      completedAt: new Date().toISOString()
+    });
+  } catch (err: any) {
+    updateRender(id, rid, { status: 'failed', error: String(err?.message ?? err) });
+  } finally {
+    busy = false;
+    active.delete(k);
+  }
+}
+
+// Records with live progress overlaid; sweeps records orphaned by a restart.
+export function listRenders(id: string): RenderRecord[] {
+  let recs = getRenders(id);
+  let changed = false;
+  for (const r of recs) {
+    if (r.status === 'rendering' && !active.has(key(id, r.id))) {
+      updateRender(id, r.id, { status: 'failed', error: 'Render interrupted (server restarted).' });
+      changed = true;
+    }
+  }
+  if (changed) recs = getRenders(id);
+  return recs.map((r) => {
+    const live = active.get(key(id, r.id));
+    return live ? { ...r, progress: live.progress, phase: live.phase } : r;
+  });
+}
+
+export function getRenderStatus(id: string, rid: string): RenderRecord {
+  const rec = listRenders(id).find((r) => r.id === rid);
+  if (!rec) throw new HttpError(404, `Render "${rid}" not found.`);
+  return rec;
+}

@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Captions as CaptionsIcon,
   Clapperboard,
+  Download,
   Film,
   Loader2,
   Music,
@@ -23,10 +24,19 @@ import { Switch } from '@/components/ui/switch';
 import { TabHeader } from '@/components/TabHeader';
 import { TransitionIcon } from '@/components/TransitionIcon';
 import { cn, relativeTime } from '@/lib/utils';
-import { useCaptions, useScript } from '@/lib/queries';
+import {
+  useAssets,
+  useCaptions,
+  useDeleteMusic,
+  useDeleteRender,
+  useRenderVideo,
+  useRenders,
+  useScript,
+  useUploadMusic
+} from '@/lib/queries';
 import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
 import { placeholderDataUri } from '@/lib/placeholder';
-import { formatDuration as fmt } from '@/lib/mockMedia';
+import { formatBytes, formatDuration as fmt } from '@/lib/mockMedia';
 import {
   PRESETS,
   TRANSITIONS,
@@ -34,7 +44,7 @@ import {
   type Transition
 } from '@/lib/editorOptions';
 import { useEditorStore, useWorkspaceEditor } from '@/lib/editorStore';
-import type { CaptionSettings, Scene, VisualType } from '@/lib/types';
+import type { CaptionSettings, RenderRecord, Scene, VisualType } from '@/lib/types';
 
 type Clip = {
   index: number;
@@ -53,7 +63,9 @@ export function VideoEditorPage() {
   const navigate = useNavigate();
   const { data: script } = useScript(id);
   const { data: caps } = useCaptions(id);
+  const { data: assets } = useAssets(id);
   const scenes = script?.scenes ?? [];
+  const assetRows = assets?.scenes ?? [];
 
   const editor = useWorkspaceEditor(id);
   const ensureTimeline = useEditorStore((s) => s.ensureTimeline);
@@ -75,13 +87,18 @@ export function VideoEditorPage() {
     let t = 0;
     return scenes.map((s: Scene, i) => {
       const ts = editor.timeline.scenes[i];
-      const asset = editor.assets[i]?.selected ?? null;
+      const asset = assetRows.find((r) => r.sceneNumber === (s.scene ?? i + 1))?.selected ?? null;
+      const assetThumb =
+        asset?.thumbUrl ||
+        (asset?.file && asset.kind === 'image'
+          ? `/media/${id}/${asset.file}?v=${asset.sizeBytes}`
+          : null);
       const durationSec = ts?.durationSec ?? Math.max(0.5, s.end - s.start);
       const clip: Clip = {
         index: i,
         spokenLine: s.spokenLine,
         visualType: s.visualType,
-        thumb: asset?.thumb ?? placeholderDataUri(`${id}-scene-${i}`, { ratio: '9:16' }),
+        thumb: assetThumb ?? placeholderDataUri(`${id}-scene-${i}`, { ratio: '9:16' }),
         hasAsset: !!asset,
         effect: ts?.effect ?? effectsFor(s.visualType)[0],
         transition: ts?.transition ?? 'Fade',
@@ -91,12 +108,20 @@ export function VideoEditorPage() {
       t += durationSec;
       return clip;
     });
-  }, [scenes, editor, id]);
+  }, [scenes, editor, assetRows, id]);
 
   const total = clips.reduce((a, c) => a + c.durationSec, 0);
   const audioTake = workspace.audio.versions.find((v) => v.version === workspace.audio.currentVersion);
   const music = editor.timeline.music;
   const captionsEnabled = editor.timeline.captionsEnabled;
+
+  const uploadMusic = useUploadMusic(id);
+  const deleteMusic = useDeleteMusic(id);
+
+  // Real media for the preview player (served from the workspace).
+  const narrationSrc = audioTake ? `/media/${id}/${audioTake.file}` : undefined;
+  const musicTrack = workspace.music?.file ? workspace.music : null;
+  const musicSrc = music.enabled && musicTrack ? `/media/${id}/${musicTrack.file}` : undefined;
 
   if (!scenes.length) {
     return (
@@ -167,6 +192,9 @@ export function VideoEditorPage() {
               captionsEnabled={captionsEnabled}
               captionSettings={caps?.settings}
               captionLines={caps?.lines ?? []}
+              narrationSrc={narrationSrc}
+              musicSrc={musicSrc}
+              musicVolume={music.volume / 100}
               onScrubToScene={setSelected}
             />
           </CardContent>
@@ -219,14 +247,52 @@ export function VideoEditorPage() {
                 </div>
                 {music.enabled && (
                   <div className="mt-3 grid gap-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="justify-self-start"
-                      onClick={() => toast.info("Music upload wired later.")}
-                    >
-                      Upload / select track
-                    </Button>
+                    {musicTrack ? (
+                      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 p-2">
+                        <Music className="size-4 shrink-0 text-accent" />
+                        <span className="min-w-0 flex-1 truncate text-xs">{musicTrack.name}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-destructive"
+                          disabled={deleteMusic.isPending}
+                          onClick={async () => {
+                            try {
+                              await deleteMusic.mutateAsync();
+                            } catch (e: any) {
+                              toast.error(String(e.message ?? e));
+                            }
+                          }}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted">
+                        {uploadMusic.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Music className="size-4" />
+                        )}
+                        Upload track
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!f) return;
+                            try {
+                              await uploadMusic.mutateAsync(f);
+                              toast.success('Music track added');
+                            } catch (err: any) {
+                              toast.error(String(err.message ?? err));
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
                     <div className="grid gap-1.5">
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>Volume</span>
@@ -349,6 +415,22 @@ export function VideoEditorPage() {
         sceneCount={clips.length}
         totalDuration={total}
         workspaceId={id}
+        buildPayload={() => ({
+          scenes: clips.map((c) => ({
+            index: c.index,
+            effect: c.effect,
+            transition: c.transition,
+            durationSec: c.durationSec
+          })),
+          captionsEnabled,
+          preset: editor.timeline.preset,
+          music: {
+            enabled: music.enabled && !!musicTrack,
+            volume: music.volume,
+            fadeIn: music.fadeIn,
+            fadeOut: music.fadeOut
+          }
+        })}
         onProceed={() => navigate(`/w/${id}/upload`)}
       />
     </div>
@@ -456,12 +538,24 @@ function effectTransform(effect: string, p: number): { transform: string; filter
   return { transform: `scale(${1.04 + 0.06 * p})` };
 }
 
+// Split a caption line into evenly-timed words — mirrors the render's caption
+// layer + the engine overlay so the preview shows the same karaoke highlight.
+function captionWords(line: { start: number; end: number; text: string }) {
+  const toks = (line.text || '').trim().split(/\s+/).filter(Boolean);
+  const dur = Math.max(0.2, line.end - line.start);
+  const per = dur / Math.max(1, toks.length);
+  return toks.map((w, i) => ({ word: w, start: line.start + per * i, end: line.start + per * (i + 1) }));
+}
+
 function EditorPreview({
   clips,
   total,
   captionsEnabled,
   captionSettings,
   captionLines,
+  narrationSrc,
+  musicSrc,
+  musicVolume = 0.3,
   onScrubToScene
 }: {
   clips: Clip[];
@@ -469,12 +563,17 @@ function EditorPreview({
   captionsEnabled: boolean;
   captionSettings?: CaptionSettings;
   captionLines: { id: number; start: number; end: number; text: string }[];
+  narrationSrc?: string;
+  musicSrc?: string;
+  musicVolume?: number;
   onScrubToScene: (i: number) => void;
 }) {
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const raf = useRef<number | null>(null);
   const last = useRef(0);
+  const narrRef = useRef<HTMLAudioElement>(null);
+  const musicRef = useRef<HTMLAudioElement>(null);
 
   const frameRef = useRef<HTMLDivElement>(null);
   const [frameW, setFrameW] = useState(300);
@@ -486,6 +585,35 @@ function EditorPreview({
     return () => ro.disconnect();
   }, []);
 
+  // Point the audio elements at a given timeline position (music loops).
+  const syncAudio = (t: number) => {
+    const n = narrRef.current;
+    const mu = musicRef.current;
+    if (n && isFinite(n.duration)) n.currentTime = Math.min(t, n.duration);
+    else if (n) n.currentTime = t;
+    if (mu) mu.currentTime = mu.duration ? t % mu.duration : 0;
+  };
+
+  // Start/stop audio with the transport.
+  useEffect(() => {
+    const n = narrRef.current;
+    const mu = musicRef.current;
+    if (playing) {
+      syncAudio(time);
+      n?.play().catch(() => {});
+      mu?.play().catch(() => {});
+    } else {
+      n?.pause();
+      mu?.pause();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing]);
+
+  // Keep music volume in sync with the slider.
+  useEffect(() => {
+    if (musicRef.current) musicRef.current.volume = Math.max(0, Math.min(1, musicVolume));
+  }, [musicVolume]);
+
   useEffect(() => {
     if (!playing) return;
     last.current = performance.now();
@@ -494,7 +622,13 @@ function EditorPreview({
       last.current = now;
       setTime((t) => {
         const next = t + dt;
-        return next >= total ? 0 : next;
+        if (next >= total) {
+          // Loop: restart the audio tracks too.
+          if (narrRef.current) narrRef.current.currentTime = 0;
+          if (musicRef.current) musicRef.current.currentTime = 0;
+          return 0;
+        }
+        return next;
       });
       raf.current = requestAnimationFrame(tick);
     };
@@ -530,31 +664,50 @@ function EditorPreview({
               style={{ transform: fx.transform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
             />
           )}
-          {captionsEnabled && line && captionSettings && (
-            <div
-              className="absolute inset-x-0 px-3 text-center"
-              style={{ top: `${8 + 0.84 * captionSettings.positionY}%`, transform: 'translateY(-50%)' }}
-            >
-              <span
-                style={{
-                  fontFamily: `'${captionSettings.fontFamily}', sans-serif`,
-                  fontSize: captionSettings.fontSize * scale,
-                  fontWeight: captionSettings.fontWeight,
-                  color: captionSettings.textColor,
-                  WebkitTextStroke:
-                    captionSettings.strokeWidth > 0
-                      ? `${captionSettings.strokeWidth * scale}px ${captionSettings.strokeColor}`
-                      : undefined,
-                  paintOrder: 'stroke fill',
-                  textShadow: '0 2px 8px rgba(0,0,0,0.5)',
-                  textTransform: captionSettings.uppercase ? 'uppercase' : 'none',
-                  lineHeight: 1.1
-                }}
+          {captionsEnabled && line && captionSettings && (() => {
+            const words = captionWords(line);
+            const activeIdx = words.findIndex((w) => time >= w.start && time < w.end);
+            const elapsed = time - line.start;
+            const remain = line.end - time;
+            let popScale = 1;
+            if (elapsed < 0.12) popScale = 0.55 + (0.45 * Math.min(1, elapsed / 0.12));
+            else if (remain < 0.09) popScale = 0.9 + 0.1 * Math.min(1, remain / 0.09);
+            return (
+              <div
+                className="absolute inset-x-0 px-3 text-center"
+                style={{ top: `${8 + 0.84 * captionSettings.positionY}%`, transform: 'translateY(-50%)' }}
               >
-                {line.text}
-              </span>
-            </div>
-          )}
+                <span
+                  style={{
+                    display: 'inline-block',
+                    fontFamily: `'${captionSettings.fontFamily}', sans-serif`,
+                    fontSize: captionSettings.fontSize * scale,
+                    fontWeight: captionSettings.fontWeight,
+                    WebkitTextStroke:
+                      captionSettings.strokeWidth > 0
+                        ? `${captionSettings.strokeWidth * scale}px ${captionSettings.strokeColor}`
+                        : undefined,
+                    paintOrder: 'stroke fill',
+                    textShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                    textTransform: captionSettings.uppercase ? 'uppercase' : 'none',
+                    lineHeight: 1.1,
+                    transform: `scale(${popScale})`,
+                    transformOrigin: 'center'
+                  }}
+                >
+                  {words.map((w, i) => (
+                    <span
+                      key={i}
+                      style={{ color: i === activeIdx ? captionSettings.highlightColor : captionSettings.textColor }}
+                    >
+                      {w.word}
+                      {i < words.length - 1 ? ' ' : ''}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            );
+          })()}
           {active && (
             <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
               Scene {active.index + 1} · {active.effect}
@@ -575,6 +728,7 @@ function EditorPreview({
             const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
             const t = frac * total;
             setTime(t);
+            syncAudio(t);
             const c = clips.find((x) => t >= x.start && t < x.start + x.durationSec);
             if (c) onScrubToScene(clips.indexOf(c));
           }}
@@ -586,70 +740,58 @@ function EditorPreview({
         </span>
       </div>
       <p className="text-center text-xs text-muted-foreground">
-        Mock preview — the final render (Remotion) is wired in a later round.
+        Preview plays narration{musicSrc ? ' + music' : ''} with simplified visuals — the final
+        render (Remotion) is exact.
       </p>
+
+      {/* Real audio elements driven by the transport (hidden). */}
+      {narrationSrc && <audio ref={narrRef} src={narrationSrc} preload="auto" className="hidden" />}
+      {musicSrc && <audio ref={musicRef} src={musicSrc} loop preload="auto" className="hidden" />}
     </div>
   );
 }
 
-// ── Render section (mock) ─────────────────────────────────────────────────────
-type Render = { id: number; name: string; thumb: string; durationSec: number; resolution: string; createdAt: string };
+// ── Render section (real Remotion render via background job) ───────────────────
+type RenderPayload = {
+  scenes: { index: number; effect: string; transition: string; durationSec: number }[];
+  captionsEnabled: boolean;
+  preset: string | null;
+  music: { enabled: boolean; volume: number; fadeIn: boolean; fadeOut: boolean };
+};
 
 function RenderSection({
   sceneCount,
   totalDuration,
   workspaceId,
+  buildPayload,
   onProceed
 }: {
   sceneCount: number;
   totalDuration: number;
   workspaceId: string;
+  buildPayload: () => RenderPayload;
   onProceed: () => void;
 }) {
-  const [rendering, setRendering] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentScene, setCurrentScene] = useState(0);
-  const [renders, setRenders] = useState<Render[]>([]);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const etaSec = Math.ceil(((100 - progress) / 100) * sceneCount * 0.6);
+  const { data: renders = [] } = useRenders(workspaceId);
+  const render = useRenderVideo(workspaceId);
+  const del = useDeleteRender(workspaceId);
 
-  const createVideo = () => {
-    if (rendering) return;
-    setRendering(true);
-    setProgress(0);
-    setCurrentScene(1);
-    const stepPct = 100 / (sceneCount * 6);
-    timer.current = setInterval(() => {
-      setProgress((pr) => {
-        const next = Math.min(100, pr + stepPct);
-        setCurrentScene(Math.min(sceneCount, Math.ceil((next / 100) * sceneCount) || 1));
-        if (next >= 100) {
-          if (timer.current) clearInterval(timer.current);
-          setRendering(false);
-          setRenders((prev) => {
-            const n = prev.length + 1;
-            return [
-              {
-                id: n,
-                name: `Render ${n}`,
-                thumb: placeholderDataUri(`${workspaceId}-render-${n}`, { ratio: '9:16', accent: true }),
-                durationSec: totalDuration,
-                resolution: '1080×1920',
-                createdAt: new Date().toISOString()
-              },
-              ...prev
-            ];
-          });
-          toast.success('Render complete (preview)');
-        }
-        return next;
-      });
-    }, 100);
+  const active = renders.find((r) => r.status === 'rendering');
+  const hasCompleted = renders.some((r) => r.status === 'completed');
+  const busy = !!active || render.isPending;
+
+  const createVideo = async () => {
+    if (busy) return;
+    try {
+      await render.mutateAsync(buildPayload());
+      toast.success('Render started');
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
   };
 
-  useEffect(() => () => {
-    if (timer.current) clearInterval(timer.current);
-  }, []);
+  const phaseLabel =
+    active?.phase === 'bundling' ? 'Bundling project…' : `Rendering ${active?.progress ?? 0}%`;
 
   return (
     <Card className="mt-5">
@@ -657,10 +799,12 @@ function RenderSection({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold">Render</h3>
-            <p className="text-xs text-muted-foreground">{sceneCount} scenes · {fmt(totalDuration)} · 1080×1920 @ 30fps</p>
+            <p className="text-xs text-muted-foreground">
+              {sceneCount} scenes · {fmt(totalDuration)} · 1080×1920 @ 30fps
+            </p>
           </div>
-          <Button variant="primary" size="lg" onClick={createVideo} disabled={rendering}>
-            {rendering ? (
+          <Button variant="primary" size="lg" onClick={createVideo} disabled={busy}>
+            {busy ? (
               <>
                 <Loader2 className="size-4 animate-spin" /> Rendering…
               </>
@@ -672,14 +816,17 @@ function RenderSection({
           </Button>
         </div>
 
-        {rendering && (
+        {active && (
           <div className="flex flex-col gap-2">
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${progress}%` }} />
+              <div
+                className="h-full rounded-full bg-accent transition-[width]"
+                style={{ width: `${Math.max(3, active.progress)}%` }}
+              />
             </div>
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Rendering scene {currentScene}/{sceneCount}</span>
-              <span>~{etaSec}s remaining</span>
+              <span>{phaseLabel}</span>
+              <span>Rendering in the background — you can keep editing.</span>
             </div>
           </div>
         )}
@@ -687,18 +834,25 @@ function RenderSection({
         <div>
           <div className="mb-3 flex items-center justify-between">
             <h4 className="text-sm font-semibold">Generated Videos</h4>
-            {renders.length > 0 && (
+            {hasCompleted && (
               <Button variant="secondary" size="sm" onClick={onProceed}>
                 Proceed to Upload <ArrowRight className="size-4" />
               </Button>
             )}
           </div>
           {renders.length === 0 ? (
-            <p className="rounded-lg bg-muted/50 p-6 text-center text-sm text-muted-foreground">Rendered videos will appear here.</p>
+            <p className="rounded-lg bg-muted/50 p-6 text-center text-sm text-muted-foreground">
+              Rendered videos will appear here.
+            </p>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {renders.map((r) => (
-                <RenderCard key={r.id} r={r} onDelete={() => setRenders((prev) => prev.filter((x) => x.id !== r.id))} />
+                <RenderCard
+                  key={r.id}
+                  r={r}
+                  workspaceId={workspaceId}
+                  onDelete={() => del.mutate(r.id)}
+                />
               ))}
             </div>
           )}
@@ -708,26 +862,64 @@ function RenderSection({
   );
 }
 
-function RenderCard({ r, onDelete }: { r: Render; onDelete: () => void }) {
+function RenderCard({
+  r,
+  workspaceId,
+  onDelete
+}: {
+  r: RenderRecord;
+  workspaceId: string;
+  onDelete: () => void;
+}) {
+  const src = r.file ? `/media/${workspaceId}/${r.file}?v=${r.sizeBytes}` : null;
+
   return (
     <div className="group overflow-hidden rounded-xl border border-border bg-card">
       <div className="relative aspect-[9/16] bg-black">
-        <img src={r.thumb} alt="" className="size-full object-cover" />
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100">
-          <span className="flex size-11 items-center justify-center rounded-full bg-black/60">
-            <Play className="size-5 text-white" />
+        {r.status === 'completed' && src ? (
+          <video src={src} controls playsInline className="size-full object-contain" />
+        ) : r.status === 'failed' ? (
+          <div className="flex size-full flex-col items-center justify-center gap-1 p-3 text-center">
+            <Trash2 className="size-5 text-destructive" />
+            <p className="text-[11px] text-destructive">Render failed</p>
+            {r.error && <p className="line-clamp-3 text-[10px] text-muted-foreground">{r.error}</p>}
+          </div>
+        ) : (
+          <div className="flex size-full flex-col items-center justify-center gap-2">
+            <Loader2 className="size-6 animate-spin text-accent" />
+            <p className="text-[11px] text-muted-foreground">
+              {r.phase === 'bundling' ? 'Bundling…' : `Rendering ${r.progress}%`}
+            </p>
+          </div>
+        )}
+        {r.status === 'completed' && (
+          <span className="pointer-events-none absolute bottom-1 right-1 rounded bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
+            {fmt(r.durationSec)}
           </span>
-        </div>
-        <span className="absolute bottom-1 right-1 rounded bg-black/65 px-1.5 py-0.5 text-[10px] text-white">{fmt(r.durationSec)}</span>
+        )}
       </div>
-      <div className="flex items-center justify-between p-2.5">
+      <div className="flex items-center justify-between gap-1 p-2.5">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{r.name}</p>
-          <p className="text-[11px] text-muted-foreground">{r.resolution} · {relativeTime(r.createdAt)}</p>
+          <p className="truncate text-sm font-medium">{r.resolution}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {r.status === 'completed' ? formatBytes(r.sizeBytes) : r.status} · {relativeTime(r.createdAt)}
+          </p>
         </div>
-        <Button variant="ghost" size="icon" className="size-7 text-destructive" onClick={onDelete}>
-          <Trash2 className="size-4" />
-        </Button>
+        <div className="flex shrink-0 items-center">
+          {r.status === 'completed' && src && (
+            <a
+              href={src}
+              download
+              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:text-accent"
+              title="Download"
+            >
+              <Download className="size-4" />
+            </a>
+          )}
+          <Button variant="ghost" size="icon" className="size-7 text-destructive" onClick={onDelete}>
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
       </div>
     </div>
   );

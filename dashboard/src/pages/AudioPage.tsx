@@ -45,6 +45,8 @@ export function AudioPage() {
   const [voiceId, setVoiceId] = useState('');
   const [stability, setStability] = useState(50);
   const [similarity, setSimilarity] = useState(75);
+  const [speedPct, setSpeedPct] = useState(100); // 100–200 → 1.00x–2.00x
+  const speed = speedPct / 100;
   const fileInput = useRef<HTMLInputElement>(null);
 
   // Default the voice to one matching the workspace language.
@@ -66,7 +68,7 @@ export function AudioPage() {
     if (!hasScript) return toast.error('Generate a script first.');
     if (!voiceId) return toast.error('Pick a voice.');
     try {
-      await generate.mutateAsync({ voiceId, stability, similarity });
+      await generate.mutateAsync({ voiceId, stability, similarity, speed });
       toast.success('Narration generated');
     } catch (e: any) {
       toast.error(String(e.message ?? e));
@@ -76,7 +78,7 @@ export function AudioPage() {
   const onUpload = async (file?: File | null) => {
     if (!file) return;
     try {
-      await uploadMut.mutateAsync(file);
+      await uploadMut.mutateAsync({ file, speed });
       toast.success('Audio uploaded');
     } catch (e: any) {
       toast.error(String(e.message ?? e));
@@ -163,6 +165,16 @@ export function AudioPage() {
               <Label>Voice settings</Label>
               <SliderRow label="Stability" value={stability} onChange={setStability} />
               <SliderRow label="Similarity" value={similarity} onChange={setSimilarity} />
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Speed</span>
+                  <span>{speed.toFixed(2)}x</span>
+                </div>
+                <Slider value={speedPct} onValueChange={setSpeedPct} min={100} max={200} />
+                <p className="text-[11px] text-muted-foreground">
+                  Speeds up narration (pitch-preserved). Applies to generated and uploaded audio.
+                </p>
+              </div>
               <Button
                 variant="primary"
                 size="lg"
@@ -216,6 +228,7 @@ export function AudioPage() {
                       <Badge variant="accent">v{current.version}</Badge>
                       <span className="text-sm font-medium">{current.voiceName}</span>
                       {current.source === 'uploaded' && <Badge variant="outline">uploaded</Badge>}
+                      {current.speed > 1 && <Badge variant="outline">{current.speed.toFixed(2)}x</Badge>}
                     </div>
                     <span className="text-xs text-muted-foreground">
                       {relativeTime(current.createdAt)}

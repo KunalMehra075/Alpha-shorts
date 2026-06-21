@@ -17,7 +17,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
 const GenerateBody = z.object({
   voiceId: z.string().min(1),
   stability: z.number().min(0).max(100).optional(),
-  similarity: z.number().min(0).max(100).optional()
+  similarity: z.number().min(0).max(100).optional(),
+  speed: z.number().min(1).max(2).optional()
 });
 
 const SelectBody = z.object({ version: z.number().int() });
@@ -42,7 +43,8 @@ audioRouter.post(
       id: pid(req),
       voiceId: body.voiceId,
       stability: body.stability ?? 50,
-      similarity: body.similarity ?? 75
+      similarity: body.similarity ?? 75,
+      speed: body.speed ?? 1
     });
     res.status(201).json(take);
   })
@@ -78,7 +80,8 @@ audioRouter.post(
     const take = await saveUploadedTake({
       id: pid(req),
       buffer: file.buffer,
-      originalName: file.originalname
+      originalName: file.originalname,
+      speed: Number((req as any).body?.speed) || 1
     });
     res.status(201).json(take);
   })

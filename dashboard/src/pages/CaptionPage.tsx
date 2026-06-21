@@ -86,6 +86,26 @@ export function CaptionPage() {
     }
   };
 
+  // Changing words-per-line re-chunks the existing transcript (reuses the cached
+  // Whisper words — no re-transcribe). Replaces manual line splits.
+  const changeWordsPerLine = async (v: number) => {
+    if (!settings) return;
+    const next = { ...settings, wordsPerLine: v };
+    setSettings(next);
+    if (!caps?.hasTranscript) {
+      setDirty(true);
+      return;
+    }
+    try {
+      const state = await generate.mutateAsync({ language, settings: next });
+      setSettings(state.settings);
+      setLines(state.lines);
+      setDirty(false);
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+
   const runRender = async () => {
     try {
       // Flush the latest style/line tweaks before rendering so the overlay uses
@@ -100,9 +120,10 @@ export function CaptionPage() {
   };
 
   const previewWords = useMemo(() => {
-    const sample = lines[0]?.text || 'Your captions preview';
-    return sample.split(/\s+/).slice(0, 5);
-  }, [lines]);
+    const perLine = settings?.wordsPerLine ?? 4;
+    const sample = lines[0]?.text || 'Your captions preview here';
+    return sample.split(/\s+/).slice(0, perLine);
+  }, [lines, settings?.wordsPerLine]);
 
   if (!settings) {
     return (
@@ -183,6 +204,21 @@ export function CaptionPage() {
                   {[400, 500, 600, 700, 800, 900].map((w) => (
                     <option key={w} value={w}>
                       {w}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              <div className="grid gap-1.5">
+                <Label>Words / line</Label>
+                <Select
+                  value={String(settings.wordsPerLine ?? 4)}
+                  disabled={generate.isPending}
+                  onChange={(e) => changeWordsPerLine(Number(e.target.value))}
+                >
+                  {[2, 3, 4, 5].map((n) => (
+                    <option key={n} value={n}>
+                      {n} {n === 2 ? '(punchy)' : n === 5 ? '(dense)' : ''}
                     </option>
                   ))}
                 </Select>

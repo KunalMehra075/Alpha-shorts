@@ -24,6 +24,7 @@ import {
   emptyStages,
   type AudioVersion,
   type Language,
+  type RenderRecord,
   type StageStatus,
   type WorkspaceSummary
 } from './schema';
@@ -326,6 +327,141 @@ export function setCaptions(
   return writeManifest(m);
 }
 
+// ── Assets ─────────────────────────────────────────────────────────────────────
+
+export function assetsDir(id: string) {
+  return join(workspaceDir(id), 'assets');
+}
+
+export function getAssetsState(id: string) {
+  return readManifest(id).assets;
+}
+
+// Initialize one asset row per script scene (idempotent). Seeds keywords and the
+// image prompt from the current script so the inspector starts populated.
+export function ensureSceneRows(id: string): Manifest['assets'] {
+  const m = readManifest(id);
+  const script = getCurrentScript(id);
+  const scenes = script?.scenes ?? [];
+  if (scenes.length === 0) return m.assets;
+
+  const byNumber = new Map(m.assets.scenes.map((r) => [r.sceneNumber, r]));
+  let changed = false;
+  for (let i = 0; i < scenes.length; i++) {
+    const sc = scenes[i];
+    const num = sc.scene ?? i + 1;
+    if (!byNumber.has(num)) {
+      byNumber.set(num, {
+        sceneNumber: num,
+        keywords: sc.searchKeywords ?? [],
+        imagePrompt: sc.imagePrompt ?? '',
+        candidates: [],
+        selected: null
+      });
+      changed = true;
+    }
+  }
+  if (changed) {
+    m.assets.scenes = Array.from(byNumber.values()).sort((a, b) => a.sceneNumber - b.sceneNumber);
+    writeManifest(m);
+  }
+  return m.assets;
+}
+
+// Merge a patch into a single scene row, refresh the assets stage status, persist.
+export function setSceneAssets(
+  id: string,
+  sceneNumber: number,
+  patch: Partial<Manifest['assets']['scenes'][number]>
+): Manifest['assets'] {
+  const m = readManifest(id);
+  const row = m.assets.scenes.find((r) => r.sceneNumber === sceneNumber);
+  if (row) {
+    Object.assign(row, patch);
+  } else {
+    m.assets.scenes.push({
+      sceneNumber,
+      keywords: [],
+      imagePrompt: '',
+      candidates: [],
+      selected: null,
+      ...patch
+    });
+    m.assets.scenes.sort((a, b) => a.sceneNumber - b.sceneNumber);
+  }
+  m.assets.updatedAt = now();
+
+  // Stage: completed once every scene row has a selection, else in_progress.
+  const rows = m.assets.scenes;
+  const allSelected = rows.length > 0 && rows.every((r) => r.selected);
+  setStage(m, 'assets', allSelected ? 'completed' : 'in_progress');
+
+  writeManifest(m);
+  return m.assets;
+}
+
+// ── Background music ──────────────────────────────────────────────────────────
+
+export function musicDir(id: string) {
+  return join(workspaceDir(id), 'music');
+}
+
+export function getMusic(id: string) {
+  return readManifest(id).music;
+}
+
+export function setWorkspaceMusic(id: string, patch: Partial<Manifest['music']>): Manifest {
+  const m = readManifest(id);
+  m.music = { ...m.music, ...patch };
+  return writeManifest(m);
+}
+
+// ── Renders (Video Editor) ──────────────────────────────────────────────────────
+
+export function rendersDir(id: string) {
+  return join(workspaceDir(id), 'renders');
+}
+
+export function getRenders(id: string) {
+  return readManifest(id).renders;
+}
+
+export function addRender(id: string, rec: RenderRecord): Manifest {
+  const m = readManifest(id);
+  m.renders.unshift(rec);
+  setStage(m, 'video', 'in_progress');
+  return writeManifest(m);
+}
+
+export function updateRender(
+  id: string,
+  rid: string,
+  patch: Partial<RenderRecord>
+): Manifest {
+  const m = readManifest(id);
+  const rec = m.renders.find((r) => r.id === rid);
+  if (rec) Object.assign(rec, patch);
+  // Refresh the video stage from the records' collective state.
+  if (m.renders.some((r) => r.status === 'completed')) {
+    setStage(m, 'video', 'completed');
+  } else if (m.renders.length && m.renders.every((r) => r.status === 'failed')) {
+    setStage(m, 'video', 'failed');
+  }
+  return writeManifest(m);
+}
+
+export function deleteRender(id: string, rid: string): Manifest {
+  const m = readManifest(id);
+  const rec = m.renders.find((r) => r.id === rid);
+  if (!rec) throw new HttpError(404, `Render "${rid}" not found.`);
+  if (rec.file) removePath(join(workspaceDir(id), rec.file));
+  m.renders = m.renders.filter((r) => r.id !== rid);
+  if (!m.renders.some((r) => r.status === 'completed')) {
+    setStage(m, 'video', m.renders.length ? 'in_progress' : 'not_started');
+  }
+  return writeManifest(m);
+}
+
 // ── Prompt templates (global) ────────────────────────────────────────────────
 
 // Creative briefs that extend the master prompt (see lib/llm/prompt.ts). They
@@ -353,9 +489,9 @@ const DEFAULT_TEMPLATES: PromptTemplate[] = [
     id: 'hindi-facts',
     name: 'Hindi Facts (Hinglish)',
     body:
-      'You are writing for a Hindi (Hinglish) facts channel. The video is a ~40 second YouTube Short.\n\n' +
+      'You are writing for a Hindi facts channel in a natural Hinglish style (Hindi written in the Devanagari script, with common English words mixed in the way Indians actually speak). The video is a ~40 second YouTube Short.\n\n' +
       FACTS_RETENTION +
-      '\n\nLANGUAGE: Write the narration in Devanagari Hindi while freely using common English words the way Indians naturally speak (Hinglish). Avoid difficult or Sanskritized Hindi, poetic or textbook wording. Use short sentences and natural pauses (commas, ellipses ...). It must sound natural spoken by an ElevenLabs AI voice.\n\n' +
+      '\n\nLANGUAGE: Write the narration in natural, spoken Hindi using the DEVANAGARI script. This is critical for audio quality: do NOT romanize — never write Hindi words in English/Latin letters (e.g. write "क्या आपको पता है", never "Kya aapko pata hai"). Keep it casual and conversational; it is fine to keep widely-used English words (science, planet, technology, internet, discover) in English where that sounds natural, but every Hindi word MUST be in Devanagari. Avoid hard, Sanskritized, poetic or textbook Hindi. Use short sentences and natural pauses (commas, ellipses ...). It must sound natural spoken by an ElevenLabs AI voice.\n\n' +
       FACTS_VISUALS
   },
   {

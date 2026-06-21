@@ -12,6 +12,28 @@ function orientationOf(width, height) {
   return 'square';
 }
 
+// The final render is 1080×1920, so anything beyond 1080p is wasted bytes. A
+// variant is "within cap" when its short side ≤ 1080 and long side ≤ 1920.
+function withinResCap(width, height) {
+  if (!width || !height) return false;
+  return Math.min(width, height) <= 1080 && Math.max(width, height) <= 1920;
+}
+
+const fileArea = (f) => (f.width || 0) * (f.height || 0);
+
+// Order variants best-first for downloading: largest within the 1080p cap first
+// (so we get true 1080p), then progressively smaller. The downloader walks this
+// list and keeps the first that fits the size cap (see asset-cache.js), so a long
+// 1080p clip gracefully falls back to 720p/540p instead of failing.
+function cappedList(variants) {
+  const pool = variants.filter(Boolean);
+  if (!pool.length) return [];
+  const byAreaDesc = [...pool].sort((a, b) => fileArea(b) - fileArea(a));
+  const within = byAreaDesc.filter((v) => withinResCap(v.width, v.height));
+  // Within-cap from largest→smallest; if none qualify, just the smallest overall.
+  return within.length ? within : [byAreaDesc[byAreaDesc.length - 1]];
+}
+
 // Normalize a popularity count (downloads/likes) into a 0..1-ish range.
 function popularityScore(count) {
   if (!count || count <= 0) return 0;
@@ -93,6 +115,7 @@ function searchLibrary(keywords) {
       source: 'library',
       libraryPath: file,
       downloadUrl: null,
+      thumb: '', // local file; the dashboard previews via /media after copy
       width: 0,
       height: 0,
       orientation: 'unknown',
@@ -106,16 +129,12 @@ function searchLibrary(keywords) {
 
 // ── Pexels ───────────────────────────────────────────────────────────────
 
-// Choose the best downloadable file from a Pexels video entry: an mp4 with the
-// largest resolution that still fits comfortably for a 1080p vertical render.
-function pickPexelsVideoFile(files) {
-  const mp4 = files.filter((f) => (f.file_type || '').includes('mp4'));
-  const pool = mp4.length ? mp4 : files;
-  const sized = pool
-    .filter((f) => f.link)
-    .sort((a, b) => (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0));
-  // Prefer the largest at/under ~4K width, else just the largest available.
-  return sized.find((f) => (f.width || 0) <= 4096) || sized[0] || null;
+// Ordered Pexels mp4 renditions (best→worst) capped at 1080p, for the downloader
+// to walk until one fits the size cap.
+function pexelsRenditions(files) {
+  const linked = (files || []).filter((f) => f.link);
+  const mp4 = linked.filter((f) => (f.file_type || '').includes('mp4'));
+  return cappedList(mp4.length ? mp4 : linked);
 }
 
 async function searchPexels({ apiKey, query, perPage, logger, orientation }) {
@@ -131,12 +150,15 @@ async function searchPexels({ apiKey, query, perPage, logger, orientation }) {
     if (res.ok) {
       const data = await res.json();
       (data.videos || []).forEach((v, i) => {
-        const file = pickPexelsVideoFile(v.video_files || []);
-        if (!file) return;
+        const ordered = pexelsRenditions(v.video_files || []);
+        if (!ordered.length) return;
+        const file = ordered[0];
         out.push({
           type: 'video',
           source: 'pexels',
           downloadUrl: file.link,
+          downloadUrls: ordered.map((f) => f.link), // 1080p first, then fallbacks
+          thumb: v.image || '', // poster frame for previews
           width: file.width || v.width,
           height: file.height || v.height,
           orientation: orientationOf(file.width || v.width, file.height || v.height),
@@ -167,6 +189,7 @@ async function searchPexels({ apiKey, query, perPage, logger, orientation }) {
           type: 'image',
           source: 'pexels',
           downloadUrl: src,
+          thumb: p.src?.medium || p.src?.small || src, // smaller preview
           width: p.width,
           height: p.height,
           orientation: orientationOf(p.width, p.height),
@@ -187,13 +210,10 @@ async function searchPexels({ apiKey, query, perPage, logger, orientation }) {
 
 // ── Pixabay ────────────────────────────────────────────────────────────────
 
-function pickPixabayVideoFile(videos) {
-  // videos = { large, medium, small, tiny } each { url, width, height }
+function pixabayRenditions(videos) {
+  // videos = { large, medium, small, tiny } each { url, width, height, thumbnail }
   const variants = Object.values(videos || {}).filter((v) => v && v.url);
-  variants.sort(
-    (a, b) => (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0)
-  );
-  return variants[0] || null;
+  return cappedList(variants); // 1080p first, then fallbacks
 }
 
 async function searchPixabay({ apiKey, query, perPage, logger }) {
@@ -208,12 +228,15 @@ async function searchPixabay({ apiKey, query, perPage, logger }) {
     if (res.ok) {
       const data = await res.json();
       (data.hits || []).forEach((h, i) => {
-        const file = pickPixabayVideoFile(h.videos);
-        if (!file) return;
+        const ordered = pixabayRenditions(h.videos);
+        if (!ordered.length) return;
+        const file = ordered[0];
         out.push({
           type: 'video',
           source: 'pixabay',
           downloadUrl: file.url,
+          downloadUrls: ordered.map((v) => v.url), // 1080p first, then fallbacks
+          thumb: file.thumbnail || '', // poster frame for previews
           width: file.width,
           height: file.height,
           orientation: orientationOf(file.width, file.height),
@@ -243,6 +266,7 @@ async function searchPixabay({ apiKey, query, perPage, logger }) {
           type: 'image',
           source: 'pixabay',
           downloadUrl: src,
+          thumb: h.webformatURL || h.previewURL || src, // smaller preview
           width: h.imageWidth,
           height: h.imageHeight,
           orientation: orientationOf(h.imageWidth, h.imageHeight),

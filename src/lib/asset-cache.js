@@ -1,4 +1,4 @@
-import { createWriteStream, existsSync, statSync, readdirSync } from 'node:fs';
+import { createWriteStream, existsSync, statSync, readdirSync, rmSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createHash } from 'node:crypto';
@@ -73,6 +73,9 @@ export async function downloadAsset({ url, kind, config, logger }) {
   }
 
   const timeoutMs = config?.assets?.downloadTimeoutMs ?? 60000;
+  // Never download oversized assets — the final render is only 1080p.
+  const maxBytes = config?.assets?.maxDownloadBytes ?? 20 * 1024 * 1024;
+  const capMb = Math.round(maxBytes / (1024 * 1024));
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -80,6 +83,11 @@ export async function downloadAsset({ url, kind, config, logger }) {
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok || !res.body) {
       throw new Error(`download failed (${res.status} ${res.statusText})`);
+    }
+    // Reject up-front when the server advertises a size over the cap.
+    const len = Number(res.headers.get('content-length') || 0);
+    if (len && len > maxBytes) {
+      throw new Error(`asset too large (${(len / 1048576).toFixed(1)}MB > ${capMb}MB cap)`);
     }
     const type = (res.headers.get('content-type') || '').split(';')[0].trim();
     const fallback = kind === 'video' ? '.mp4' : '.jpg';
@@ -89,6 +97,11 @@ export async function downloadAsset({ url, kind, config, logger }) {
     const dest = join(dir, `${key}${ext}`);
     const tmp = `${dest}.part`;
     await pipeline(Readable.fromWeb(res.body), createWriteStream(tmp));
+    // Backstop for servers that don't send Content-Length.
+    if (statSync(tmp).size > maxBytes) {
+      rmSync(tmp, { force: true });
+      throw new Error(`asset too large (> ${capMb}MB cap)`);
+    }
     // Atomic-ish: rename the completed temp file into place.
     const { renameSync } = await import('node:fs');
     renameSync(tmp, dest);
@@ -97,4 +110,30 @@ export async function downloadAsset({ url, kind, config, logger }) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Download the first rendition (from an ordered best→worst list) that fits the
+ * size cap. Lets a long 1080p clip fall back to 720p/540p instead of failing.
+ *
+ * @param {object} opts
+ * @param {string[]} opts.urls   Ordered candidate URLs (best quality first).
+ * @param {'video'|'image'} opts.kind
+ * @param {object} opts.config
+ * @param {object} [opts.logger]
+ * @returns {Promise<{ path: string, cached: boolean }>}
+ */
+export async function downloadFirstFitting({ urls, kind, config, logger }) {
+  const list = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
+  if (!list.length) throw new Error('no download URL provided');
+  let lastErr;
+  for (const url of list) {
+    try {
+      return await downloadAsset({ url, kind, config, logger });
+    } catch (err) {
+      lastErr = err;
+      logger?.debug(`rendition skipped (${err.message}): ${url}`);
+    }
+  }
+  throw lastErr ?? new Error('no rendition could be downloaded');
 }

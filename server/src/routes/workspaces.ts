@@ -13,6 +13,8 @@ import {
 import { scriptRouter } from './script';
 import { audioRouter } from './audio';
 import { captionRouter } from './caption';
+import { assetsRouter } from './assets';
+import { videoRouter } from './video';
 
 export const workspacesRouter = Router();
 
@@ -75,3 +77,5 @@ workspacesRouter.delete(
 workspacesRouter.use('/:id/script', scriptRouter);
 workspacesRouter.use('/:id/audio', audioRouter);
 workspacesRouter.use('/:id/caption', captionRouter);
+workspacesRouter.use('/:id/assets', assetsRouter);
+workspacesRouter.use('/:id/video', videoRouter);

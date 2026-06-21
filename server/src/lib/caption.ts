@@ -12,7 +12,8 @@ import type { CaptionLine, CaptionSettings } from './schema';
 
 type Word = { word: string; start: number; end: number };
 
-const WORDS_PER_LINE = 4;
+const DEFAULT_WORDS_PER_LINE = 4;
+const clampWordsPerLine = (n?: number) => Math.min(5, Math.max(2, n || DEFAULT_WORDS_PER_LINE));
 
 // ── Whisper ──────────────────────────────────────────────────────────────────
 
@@ -82,10 +83,10 @@ async function transcribe(audioPath: string, outDir: string, language: string, f
 
 // ── Caption data ──────────────────────────────────────────────────────────────
 
-function groupLines(words: Word[]): CaptionLine[] {
+function groupLines(words: Word[], perLine: number): CaptionLine[] {
   const lines: CaptionLine[] = [];
-  for (let i = 0; i < words.length; i += WORDS_PER_LINE) {
-    const chunk = words.slice(i, i + WORDS_PER_LINE);
+  for (let i = 0; i < words.length; i += perLine) {
+    const chunk = words.slice(i, i + perLine);
     lines.push({
       id: lines.length,
       start: chunk[0].start,
@@ -129,7 +130,7 @@ function engineStyle(settings: CaptionSettings) {
     lineSpacing: 12,
     uppercase: settings.uppercase,
     bold: settings.fontWeight >= 700,
-    maxWordsPerLine: WORDS_PER_LINE,
+    maxWordsPerLine: clampWordsPerLine(settings.wordsPerLine),
     animation: { enter: 'pop', exit: 'pop', enterDuration: 120, exitDuration: 90 }
   };
 }
@@ -202,7 +203,7 @@ export async function generateCaptions(opts: {
   ensureDir(dir);
 
   const words = await transcribe(audioPath, dir, language, force);
-  const lines = groupLines(words);
+  const lines = groupLines(words, clampWordsPerLine(settings.wordsPerLine));
 
   writeFileSync(join(dir, 'words.json'), JSON.stringify(words, null, 2));
   writeFileSync(join(dir, 'captions.srt'), toSrt(lines));

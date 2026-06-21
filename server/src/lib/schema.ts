@@ -52,6 +52,7 @@ export const AudioVersion = z.object({
   durationSec: z.number().default(0),
   sizeBytes: z.number().default(0),
   genTimeSec: z.number().default(0),
+  speed: z.number().default(1), // playback speed baked into the file (1–2x)
   source: z.enum(['generated', 'uploaded']).default('generated'),
   createdAt: z.string()
 });
@@ -67,7 +68,9 @@ export const CaptionSettings = z.object({
   highlightColor: z.string().default('#E11D2A'),
   // Vertical position only: 0 = top, 100 = bottom.
   positionY: z.number().min(0).max(100).default(78),
-  uppercase: z.boolean().default(true)
+  uppercase: z.boolean().default(true),
+  // How many words show per caption line (2 = punchy, 5 = denser).
+  wordsPerLine: z.number().int().min(2).max(5).default(4)
 });
 export type CaptionSettings = z.infer<typeof CaptionSettings>;
 
@@ -105,6 +108,60 @@ export const CaptionsState = z.object({
 });
 export type CaptionsState = z.infer<typeof CaptionsState>;
 
+// A single visual asset attached to (or a candidate for) a scene. `thumbUrl` is
+// a remote preview for the candidates grid; `file` is set (workspace-relative)
+// once the asset has been downloaded/uploaded into the workspace.
+export const AssetRef = z.object({
+  origin: z.enum(['stock', 'upload', 'library']).default('stock'),
+  source: z.enum(['library', 'pexels', 'pixabay', 'upload']).default('pexels'),
+  kind: z.enum(['video', 'image']),
+  label: z.string().default(''),
+  width: z.number().default(0),
+  height: z.number().default(0),
+  orientation: z.string().default('unknown'),
+  thumbUrl: z.string().default(''),
+  downloadUrl: z.string().nullable().default(null),
+  downloadUrls: z.array(z.string()).default([]), // ordered renditions (best→worst)
+  libraryPath: z.string().nullable().default(null),
+  file: z.string().nullable().default(null),
+  sizeBytes: z.number().default(0)
+});
+export type AssetRef = z.infer<typeof AssetRef>;
+
+export const SceneAssets = z.object({
+  sceneNumber: z.number(),
+  keywords: z.array(z.string()).default([]),
+  imagePrompt: z.string().default(''),
+  candidates: z.array(AssetRef).default([]),
+  selected: AssetRef.nullable().default(null)
+});
+export type SceneAssets = z.infer<typeof SceneAssets>;
+
+export const AssetsState = z.object({
+  scenes: z.array(SceneAssets).default([]),
+  updatedAt: z.string().optional()
+});
+export type AssetsState = z.infer<typeof AssetsState>;
+
+// A rendered video produced by the Video Editor step. Progress/phase are updated
+// live while a background render runs; file/sizeBytes are set once completed.
+export const RenderRecord = z.object({
+  id: z.string(),
+  status: z.enum(['rendering', 'completed', 'failed']).default('rendering'),
+  progress: z.number().default(0), // 0..100
+  phase: z.string().default('bundling'), // 'bundling' | 'rendering'
+  file: z.string().nullable().default(null), // workspace-relative mp4 once done
+  durationSec: z.number().default(0),
+  fps: z.number().default(30),
+  resolution: z.string().default('1080×1920'),
+  sizeBytes: z.number().default(0),
+  preset: z.string().nullable().default(null),
+  error: z.string().optional(),
+  createdAt: z.string(),
+  completedAt: z.string().optional()
+});
+export type RenderRecord = z.infer<typeof RenderRecord>;
+
 export const ScriptVersionMeta = z.object({
   version: z.number(),
   createdAt: z.string(),
@@ -140,8 +197,14 @@ export const Manifest = z.object({
     })
     .default({ currentVersion: null, versions: [] }),
   captions: CaptionsState.default({}),
+  // Per-scene visual assets. `.default` so pre-existing manifests still parse.
+  assets: AssetsState.default({ scenes: [] }),
+  // Optional background-music track for the Video Editor.
+  music: z
+    .object({ file: z.string().nullable().default(null), name: z.string().default('') })
+    .default({ file: null, name: '' }),
   scenes: z.array(z.any()).default([]),
-  renders: z.array(z.any()).default([]),
+  renders: z.array(RenderRecord).default([]),
   upload: z
     .object({
       platform: z.string().default('youtube'),

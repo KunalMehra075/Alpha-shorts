@@ -1,10 +1,11 @@
 import React from 'react';
-import { AbsoluteFill, Audio, Sequence, staticFile } from 'remotion';
+import { AbsoluteFill, Audio, Sequence, staticFile, useVideoConfig } from 'remotion';
 import { SceneTransition } from './components/SceneTransition.jsx';
 import { ImageScene } from './scenes/ImageScene.jsx';
 import { VideoScene } from './scenes/VideoScene.jsx';
 import { AnimationScene } from './scenes/AnimationScene.jsx';
 import { SplitScreenScene } from './scenes/SplitScreenScene.jsx';
+import { Captions } from './components/Captions.jsx';
 
 function renderScene(scene) {
   const common = {
@@ -31,7 +32,28 @@ function renderScene(scene) {
   }
 }
 
-export const ShortsVideo = ({ scenes = [], narration, music, transitionFrames = 15 }) => {
+// Looped background music with optional fade in/out (0.8s ramps).
+const MusicTrack = ({ music }) => {
+  const { durationInFrames, fps } = useVideoConfig();
+  const fade = Math.max(1, Math.round(0.8 * fps));
+  const base = music.volume ?? 0.12;
+  return (
+    <Audio
+      src={staticFile(music.src)}
+      loop
+      volume={(f) => {
+        let v = base;
+        if (music.fadeIn && f < fade) v *= f / fade;
+        if (music.fadeOut && f > durationInFrames - fade) {
+          v *= Math.max(0, (durationInFrames - f) / fade);
+        }
+        return Math.max(0, v);
+      }}
+    />
+  );
+};
+
+export const ShortsVideo = ({ scenes = [], narration, music, transitionFrames = 15, captions }) => {
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {scenes.map((scene) => (
@@ -50,13 +72,16 @@ export const ShortsVideo = ({ scenes = [], narration, music, transitionFrames = 
         </Sequence>
       ))}
 
+      {/* Caption overlay sits above the scenes (dashboard render only). */}
+      {captions?.enabled && captions.lines?.length ? (
+        <Captions lines={captions.lines} settings={captions.settings} />
+      ) : null}
+
       {/* Narration is always the primary audio track. */}
       {narration ? <Audio src={staticFile(narration)} /> : null}
 
       {/* Optional background music, looped, underneath the narration. */}
-      {music ? (
-        <Audio src={staticFile(music.src)} volume={music.volume ?? 0.12} loop />
-      ) : null}
+      {music ? <MusicTrack music={music} /> : null}
     </AbsoluteFill>
   );
 };

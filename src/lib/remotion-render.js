@@ -11,8 +11,10 @@ import { paths } from './paths.js';
  * @param {object} opts.config      video-gen config (render settings).
  * @param {string} opts.outPath     Absolute path for the final .mp4.
  * @param {object} [opts.logger]
+ * @param {(p: { phase: 'bundling'|'rendering', progress: number }) => void} [opts.onProgress]
+ *        Optional progress callback (progress is 0..100). Used by the dashboard.
  */
-export async function renderVideo({ inputProps, config, outPath, logger }) {
+export async function renderVideo({ inputProps, config, outPath, logger, onProgress }) {
   let bundle, selectComposition, renderMedia;
   try {
     ({ bundle } = await import('@remotion/bundler'));
@@ -31,7 +33,10 @@ export async function renderVideo({ inputProps, config, outPath, logger }) {
     entryPoint: entry,
     publicDir: paths.remotionPublic,
     // Quiet, incremental webpack cache lives under node_modules/.cache.
-    onProgress: (p) => logger?.debug(`bundle ${p}%`)
+    onProgress: (p) => {
+      logger?.debug(`bundle ${p}%`);
+      onProgress?.({ phase: 'bundling', progress: p });
+    }
   });
 
   logger?.info('Selecting composition…');
@@ -58,6 +63,7 @@ export async function renderVideo({ inputProps, config, outPath, logger }) {
     inputProps,
     onProgress: ({ progress }) => {
       const pct = Math.round(progress * 100);
+      onProgress?.({ phase: 'rendering', progress: pct });
       if (pct >= lastLogged + 10) {
         lastLogged = pct;
         logger?.info(`Rendering… ${pct}%`);

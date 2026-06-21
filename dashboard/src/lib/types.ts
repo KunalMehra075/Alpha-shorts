@@ -42,6 +42,7 @@ export type AudioVersion = {
   durationSec: number;
   sizeBytes: number;
   genTimeSec: number;
+  speed: number;
   source: 'generated' | 'uploaded';
   createdAt: string;
 };
@@ -58,6 +59,7 @@ export type CaptionSettings = {
   highlightColor: string;
   positionY: number; // 0 = top, 100 = bottom
   uppercase: boolean;
+  wordsPerLine: number; // 2–5 words shown per caption line
 };
 
 export type CaptionLine = { id: number; start: number; end: number; text: string };
@@ -82,12 +84,67 @@ export type CaptionsState = {
   overlay: CaptionOverlay | null;
 };
 
+export type AssetRef = {
+  origin: 'stock' | 'upload' | 'library';
+  source: 'library' | 'pexels' | 'pixabay' | 'upload';
+  kind: 'video' | 'image';
+  label: string;
+  width: number;
+  height: number;
+  orientation: string;
+  thumbUrl: string;
+  downloadUrl: string | null;
+  downloadUrls: string[];
+  libraryPath: string | null;
+  file: string | null;
+  sizeBytes: number;
+};
+
+export type SceneAssets = {
+  sceneNumber: number;
+  keywords: string[];
+  imagePrompt: string;
+  candidates: AssetRef[];
+  selected: AssetRef | null;
+};
+
+export type AssetsState = { scenes: SceneAssets[]; updatedAt?: string };
+
+export type RenderStatus = 'rendering' | 'completed' | 'failed';
+
+export type RenderRecord = {
+  id: string;
+  status: RenderStatus;
+  progress: number; // 0..100
+  phase: string; // 'bundling' | 'rendering'
+  file: string | null;
+  durationSec: number;
+  fps: number;
+  resolution: string;
+  sizeBytes: number;
+  preset: string | null;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+};
+
+export type MusicTrack = { file: string | null; name: string };
+
+export type RenderTimelinePayload = {
+  scenes: { index: number; effect: string; transition: string; durationSec: number }[];
+  captionsEnabled: boolean;
+  preset: string | null;
+  music: { enabled: boolean; volume: number; fadeIn: boolean; fadeOut: boolean };
+};
+
 export type Manifest = WorkspaceSummary & {
   script: { currentVersion: number | null; versions: ScriptVersionMeta[] };
   audio: AudioState;
   captions: CaptionsState;
+  assets: AssetsState;
+  music: MusicTrack;
   scenes: unknown[];
-  renders: unknown[];
+  renders: RenderRecord[];
   upload: { platform: string; visibility: 'public' | 'private' | 'unlisted' };
 };
 

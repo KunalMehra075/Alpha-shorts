@@ -1,5 +1,9 @@
 import type {
+  AssetRef,
+  AssetsState,
   AudioState,
+  RenderRecord,
+  RenderTimelinePayload,
   AudioVersion,
   CaptionLine,
   CaptionOverlay,
@@ -7,6 +11,7 @@ import type {
   CaptionsState,
   Language,
   Manifest,
+  MusicTrack,
   PromptTemplate,
   Scene,
   ScriptVersion,
@@ -84,7 +89,7 @@ export const api = {
   getAudio: (id: string) => request<AudioState>(`/workspaces/${id}/audio`),
   generateAudio: (
     id: string,
-    body: { voiceId: string; stability?: number; similarity?: number }
+    body: { voiceId: string; stability?: number; similarity?: number; speed?: number }
   ) =>
     request<AudioVersion>(`/workspaces/${id}/audio/generate`, {
       method: 'POST',
@@ -97,9 +102,10 @@ export const api = {
     }),
   deleteAudio: (id: string, version: number) =>
     request<Manifest>(`/workspaces/${id}/audio/${version}`, { method: 'DELETE' }),
-  uploadAudio: async (id: string, file: File) => {
+  uploadAudio: async (id: string, file: File, speed = 1) => {
     const fd = new FormData();
     fd.append('file', file);
+    fd.append('speed', String(speed));
     const res = await fetch(`/api/workspaces/${id}/audio/upload`, {
       method: 'POST',
       body: fd
@@ -134,6 +140,83 @@ export const api = {
     }),
   renderCaptionOverlay: (id: string) =>
     request<CaptionOverlay>(`/workspaces/${id}/caption/render`, { method: 'POST' }),
+
+  // assets
+  getAssets: (id: string) => request<AssetsState>(`/workspaces/${id}/assets`),
+  searchSceneAssets: (id: string, sceneNumber: number, keywords: string[]) =>
+    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/search`, {
+      method: 'POST',
+      body: JSON.stringify({ keywords })
+    }),
+  selectSceneAsset: (id: string, sceneNumber: number, ref: AssetRef) =>
+    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/select`, {
+      method: 'POST',
+      body: JSON.stringify({ ref })
+    }),
+  clearSceneAsset: (id: string, sceneNumber: number) =>
+    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/select`, {
+      method: 'DELETE'
+    }),
+  saveSceneMeta: (
+    id: string,
+    sceneNumber: number,
+    body: { keywords: string[]; imagePrompt: string }
+  ) =>
+    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    }),
+  autofillAssets: (id: string) =>
+    request<AssetsState>(`/workspaces/${id}/assets/autofill`, { method: 'POST' }),
+  uploadSceneAsset: async (id: string, sceneNumber: number, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/workspaces/${id}/assets/${sceneNumber}/upload`, {
+      method: 'POST',
+      body: fd
+    });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const b = await res.json();
+        if (b?.error) msg = b.error;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.json() as Promise<AssetsState>;
+  },
+
+  // video renders
+  getRenders: (id: string) => request<RenderRecord[]>(`/workspaces/${id}/video`),
+  getRenderStatus: (id: string, rid: string) =>
+    request<RenderRecord>(`/workspaces/${id}/video/${rid}`),
+  renderVideo: (id: string, timeline: RenderTimelinePayload) =>
+    request<RenderRecord>(`/workspaces/${id}/video`, {
+      method: 'POST',
+      body: JSON.stringify({ timeline })
+    }),
+  deleteRender: (id: string, rid: string) =>
+    request<Manifest>(`/workspaces/${id}/video/${rid}`, { method: 'DELETE' }),
+  uploadMusic: async (id: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/workspaces/${id}/video/music`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const b = await res.json();
+        if (b?.error) msg = b.error;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.json() as Promise<MusicTrack>;
+  },
+  deleteMusic: (id: string) =>
+    request<MusicTrack>(`/workspaces/${id}/video/music`, { method: 'DELETE' }),
 
   // templates
   listTemplates: () => request<PromptTemplate[]>('/prompt-templates'),

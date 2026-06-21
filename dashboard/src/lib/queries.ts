@@ -14,6 +14,8 @@ export const qk = {
   voices: ['voices'] as const,
   audio: (id: string) => ['audio', id] as const,
   captions: (id: string) => ['captions', id] as const,
+  assets: (id: string) => ['assets', id] as const,
+  renders: (id: string) => ['renders', id] as const,
   templates: ['templates'] as const,
   stats: ['stats'] as const
 };
@@ -157,7 +159,7 @@ function invalidateAudio(qc: ReturnType<typeof useQueryClient>, id: string) {
 export function useGenerateAudio(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { voiceId: string; stability?: number; similarity?: number }) =>
+    mutationFn: (body: { voiceId: string; stability?: number; similarity?: number; speed?: number }) =>
       api.generateAudio(id, body),
     onSuccess: () => invalidateAudio(qc, id)
   });
@@ -182,7 +184,8 @@ export function useDeleteAudio(id: string) {
 export function useUploadAudio(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (file: File) => api.uploadAudio(id, file),
+    mutationFn: ({ file, speed }: { file: File; speed?: number }) =>
+      api.uploadAudio(id, file, speed),
     onSuccess: () => invalidateAudio(qc, id)
   });
 }
@@ -227,6 +230,140 @@ export function useRenderCaptionOverlay(id: string) {
   return useMutation({
     mutationFn: () => api.renderCaptionOverlay(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.captions(id) })
+  });
+}
+
+// ── Assets ──────────────────────────────────────────────────────────────────────
+export function useAssets(id: string | undefined) {
+  return useQuery({
+    queryKey: qk.assets(id ?? ''),
+    queryFn: () => api.getAssets(id!),
+    enabled: !!id
+  });
+}
+
+function invalidateAssets(qc: ReturnType<typeof useQueryClient>, id: string) {
+  qc.invalidateQueries({ queryKey: qk.assets(id) });
+  qc.invalidateQueries({ queryKey: qk.workspace(id) });
+  qc.invalidateQueries({ queryKey: qk.workspaces });
+  qc.invalidateQueries({ queryKey: qk.stats });
+}
+
+export function useSearchSceneAssets(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sceneNumber, keywords }: { sceneNumber: number; keywords: string[] }) =>
+      api.searchSceneAssets(id, sceneNumber, keywords),
+    // Search only refreshes candidates — update the cache without invalidating so
+    // it doesn't refetch and clobber in-flight edits.
+    onSuccess: (state) => qc.setQueryData(qk.assets(id), state)
+  });
+}
+
+export function useSelectSceneAsset(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sceneNumber, ref }: { sceneNumber: number; ref: import('./types').AssetRef }) =>
+      api.selectSceneAsset(id, sceneNumber, ref),
+    onSuccess: (state) => {
+      qc.setQueryData(qk.assets(id), state);
+      invalidateAssets(qc, id);
+    }
+  });
+}
+
+export function useClearSceneAsset(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sceneNumber: number) => api.clearSceneAsset(id, sceneNumber),
+    onSuccess: (state) => {
+      qc.setQueryData(qk.assets(id), state);
+      invalidateAssets(qc, id);
+    }
+  });
+}
+
+export function useSaveSceneMeta(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { sceneNumber: number; keywords: string[]; imagePrompt: string }) =>
+      api.saveSceneMeta(id, body.sceneNumber, { keywords: body.keywords, imagePrompt: body.imagePrompt }),
+    onSuccess: (state) => qc.setQueryData(qk.assets(id), state)
+  });
+}
+
+export function useUploadSceneAsset(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sceneNumber, file }: { sceneNumber: number; file: File }) =>
+      api.uploadSceneAsset(id, sceneNumber, file),
+    onSuccess: (state) => {
+      qc.setQueryData(qk.assets(id), state);
+      invalidateAssets(qc, id);
+    }
+  });
+}
+
+export function useAutofillAssets(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.autofillAssets(id),
+    onSuccess: (state) => {
+      qc.setQueryData(qk.assets(id), state);
+      invalidateAssets(qc, id);
+    }
+  });
+}
+
+// ── Video renders ─────────────────────────────────────────────────────────────
+export function useRenders(id: string | undefined) {
+  return useQuery({
+    queryKey: qk.renders(id ?? ''),
+    queryFn: () => api.getRenders(id!),
+    enabled: !!id,
+    // Poll while a render is in progress; stop once everything has settled.
+    refetchInterval: (q) =>
+      (q.state.data ?? []).some((r) => r.status === 'rendering') ? 1500 : false
+  });
+}
+
+function invalidateRenders(qc: ReturnType<typeof useQueryClient>, id: string) {
+  qc.invalidateQueries({ queryKey: qk.renders(id) });
+  qc.invalidateQueries({ queryKey: qk.workspace(id) });
+  qc.invalidateQueries({ queryKey: qk.workspaces });
+  qc.invalidateQueries({ queryKey: qk.stats });
+}
+
+export function useRenderVideo(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (timeline: import('./types').RenderTimelinePayload) =>
+      api.renderVideo(id, timeline),
+    onSuccess: () => invalidateRenders(qc, id)
+  });
+}
+
+export function useDeleteRender(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rid: string) => api.deleteRender(id, rid),
+    onSuccess: () => invalidateRenders(qc, id)
+  });
+}
+
+export function useUploadMusic(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.uploadMusic(id, file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspace(id) })
+  });
+}
+
+export function useDeleteMusic(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.deleteMusic(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspace(id) })
   });
 }
 

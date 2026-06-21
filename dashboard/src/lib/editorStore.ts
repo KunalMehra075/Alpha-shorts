@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Scene } from './types';
-import type { StockAsset } from './mockMedia';
 import {
   PRESETS,
   defaultEffect,
@@ -11,13 +10,9 @@ import {
 } from './editorOptions';
 
 // ── Shapes ───────────────────────────────────────────────────────────────────
-export type SceneAsset = {
-  selected: StockAsset | null;
-  keywords: string[];
-  imagePrompt: string;
-  seed: number;
-};
-
+// Interim, client-only Video Editor state (timeline tweaks). Per-scene *assets*
+// now live in the manifest (see queries `useAssets`); this store is timeline-only
+// until the editor itself goes functional.
 export type TimelineScene = {
   effect: string;
   transition: Transition;
@@ -33,7 +28,6 @@ export type MusicSettings = {
 };
 
 export type WorkspaceEditor = {
-  assets: Record<number, SceneAsset>;
   timeline: {
     scenes: Record<number, TimelineScene>;
     preset: string | null;
@@ -51,7 +45,6 @@ const emptyMusic = (): MusicSettings => ({
 });
 
 const emptyEditor = (): WorkspaceEditor => ({
-  assets: {},
   timeline: { scenes: {}, preset: null, music: emptyMusic(), captionsEnabled: true }
 });
 
@@ -60,12 +53,6 @@ const EMPTY_EDITOR: WorkspaceEditor = emptyEditor();
 
 type EditorState = {
   byWorkspace: Record<string, WorkspaceEditor>;
-
-  ensureAssets: (id: string, scenes: Scene[]) => void;
-  setAsset: (id: string, i: number, asset: StockAsset | null) => void;
-  setKeywords: (id: string, i: number, keywords: string[]) => void;
-  setImagePrompt: (id: string, i: number, prompt: string) => void;
-  bumpSeed: (id: string, i: number) => void;
 
   ensureTimeline: (id: string, scenes: Scene[]) => void;
   setSceneEffect: (id: string, i: number, effect: string) => void;
@@ -91,70 +78,11 @@ export const useEditorStore = create<EditorState>()(
     (set) => ({
       byWorkspace: {},
 
-      ensureAssets: (id, scenes) =>
-        set((s) =>
-          withWs(s, id, (ws) => {
-            const assets = { ...ws.assets };
-            scenes.forEach((sc, i) => {
-              if (!assets[i]) {
-                assets[i] = {
-                  selected: null,
-                  keywords: sc.searchKeywords ?? [],
-                  imagePrompt: sc.imagePrompt ?? '',
-                  seed: 0
-                };
-              }
-            });
-            return { ...ws, assets };
-          })
-        ),
-
-      setAsset: (id, i, asset) =>
-        set((s) =>
-          withWs(s, id, (ws) => ({
-            ...ws,
-            assets: { ...ws.assets, [i]: { ...ws.assets[i], selected: asset } }
-          }))
-        ),
-
-      setKeywords: (id, i, keywords) =>
-        set((s) =>
-          withWs(s, id, (ws) => ({
-            ...ws,
-            assets: { ...ws.assets, [i]: { ...ws.assets[i], keywords } }
-          }))
-        ),
-
-      setImagePrompt: (id, i, prompt) =>
-        set((s) =>
-          withWs(s, id, (ws) => ({
-            ...ws,
-            assets: { ...ws.assets, [i]: { ...ws.assets[i], imagePrompt: prompt } }
-          }))
-        ),
-
-      bumpSeed: (id, i) =>
-        set((s) =>
-          withWs(s, id, (ws) => ({
-            ...ws,
-            assets: { ...ws.assets, [i]: { ...ws.assets[i], seed: (ws.assets[i]?.seed ?? 0) + 1 } }
-          }))
-        ),
-
       ensureTimeline: (id, scenes) =>
         set((s) =>
           withWs(s, id, (ws) => {
-            const assets = { ...ws.assets };
             const tScenes = { ...ws.timeline.scenes };
             scenes.forEach((sc, i) => {
-              if (!assets[i]) {
-                assets[i] = {
-                  selected: null,
-                  keywords: sc.searchKeywords ?? [],
-                  imagePrompt: sc.imagePrompt ?? '',
-                  seed: 0
-                };
-              }
               if (!tScenes[i]) {
                 // "Looks good immediately": default effect + a random transition.
                 tScenes[i] = {
@@ -164,7 +92,7 @@ export const useEditorStore = create<EditorState>()(
                 };
               }
             });
-            return { ...ws, assets, timeline: { ...ws.timeline, scenes: tScenes } };
+            return { ...ws, timeline: { ...ws.timeline, scenes: tScenes } };
           })
         ),
 

@@ -1,6 +1,6 @@
 # Session Handoff — shorts-generator
 
-_Last updated: 2026-06-21_
+_Last updated: 2026-06-21 (Assets + Video Editor steps made functional)_
 
 A working snapshot for picking this project up in a fresh session. Read this first.
 
@@ -51,8 +51,8 @@ The dashboard is the focus. The CLI engine is mostly reused by the dashboard ser
 | 1 | Script Generator | `script` | **Functional.** LLM via **strategy pattern** (`server/src/lib/llm/`): DeepSeek → OpenAI → mock fallback. Master prompt owns the JSON output contract; prompt templates are creative briefs that extend it. Versioning + restore. |
 | 2 | Audio Generator | `audio` | **Functional.** Real ElevenLabs (`generateTake`), voices in `config/voices.json` (Allison/Kanika), model `eleven_multilingual_v2`. Upload, history, real player, ffprobe duration. |
 | 3 | Caption Maker | `caption` | **Functional.** Whisper transcription → editable lines/SRT/JSON; style (incl. 0–100 vertical position slider); renders **two playable mp4s** (normal black + green) with narration audio muxed; live CSS preview; render uses edited lines + flushes settings + cache-busts video. |
-| 4 | Assets | `assets` | **UI-only (mock).** Per-scene asset gather: stock suggestions (`mockStockResults`), keyword/prompt edit, mock upload, Asset Library. Persists selections to zustand `editorStore`. No AI-gen. |
-| 5 | Video Editor | `video` | **UI-only (mock).** Auto timeline + random transitions, effect presets, square timeline cards with **transition SVG icons** (`components/TransitionIcon.tsx`) in connector circles, scene settings (2×2 grid), 9:16 red-bordered mock preview (no autoplay), audio/music/caption rows, mock render+gallery. |
+| 4 | Assets | `assets` | **Functional.** Per-scene stock search via the engine (`searchAssets` → Pexels/Pixabay/library, gated on `PEXELS_API_KEY`/`PIXABAY_API_KEY`), select → downloads the file into `workspaces/<id>/assets/` (served via `/media`), manual upload, "Auto-fill all", Asset Library. Persisted to the **manifest** `assets` section (`server/src/lib/assets.ts` + `routes/assets.ts`). No AI-gen yet (Image Prompt is saved for later). |
+| 5 | Video Editor | `video` | **Functional render.** Auto timeline + presets + transition icons + scene settings + CSS scrubber preview (reads real assets/captions). "Create Video" runs a **real Remotion render** as a background job (`server/src/lib/video.ts` + `routes/video.ts`): builds `inputProps` from the manifest assets + editor timeline + captions, reuses the engine's `renderVideo()`/`ShortsVideo` composition, and writes an MP4 to `workspaces/<id>/renders/` (served via `/media`). UI **polls** `useRenders` for live progress; gallery plays/downloads/deletes real renders. Captions composite via a new Remotion layer (`remotion/components/Captions.jsx`). Timeline tweaks still live in zustand `editorStore` (sent in the render request); music deferred. |
 | 6 | Video Uploader | `upload` | **UI-only (mock).** SEO fields + mock AI suggestions, platform targets (YouTube active, others "soon"), visibility, mock upload progress + URL. |
 
 Dashboard Home (`HomePage`): workspace CRUD, recents, placeholder stats.
@@ -108,16 +108,24 @@ Dashboard Home (`HomePage`): workspace CRUD, recents, placeholder stats.
 ---
 
 ## 8. Suggested next steps (not yet done)
-1. **Functional Assets (step 4):** real `searchAssets`/`downloadAsset` (`src/lib/assets.js`,
-   `asset-cache.js`) behind `/api/workspaces/:id/assets/*`; persist selections to a manifest
-   `assets` section (migrate off the zustand-only store); optional AI image gen (higgsfield MCP
-   `generate_image` is available, or OpenAI images).
-2. **Functional Video Editor (step 5):** `@remotion/player` live preview + server render via an
-   adapted `buildTimeline` (consume pre-chosen assets, effects, transitions) + `renderVideo`,
-   compositing **captions** (native Remotion caption layer reusing lines+style) + narration +
-   optional music; persist timeline + renders to the manifest.
-3. **Functional Uploader (step 6):** YouTube OAuth + Data API upload, real SEO via the LLM.
-4. Migrate `editorStore` (localStorage) → manifest persistence once steps 4/5 are functional.
+1. **Functional Uploader (step 6):** YouTube OAuth + Data API upload, real SEO via the LLM.
+2. **AI image generation for Assets:** wire the per-scene "Image Prompt" to higgsfield MCP
+   `generate_image` (or OpenAI images), save the result as the scene's selected asset.
+3. **Video Editor polish:** persist the editor timeline to a manifest `video` section (migrate off
+   localStorage so renders are reproducible server-side); background music (needs a track-upload +
+   mixing/fades); exact caption font embedding in Remotion; `@remotion/player` true-WYSIWYG preview.
+
+_Done in recent rounds:_ Assets (step 4) — real stock search + download-on-select + upload +
+auto-fill, persisted to `manifest.assets`. Video Editor (step 5) — real background Remotion render
+(`server/src/lib/video.ts`, `routes/video.ts`, `remotion/components/Captions.jsx`,
+`renderVideo` `onProgress`) producing a playable 1080×1920 MP4 with live progress polling.
+
+⚠️ **Render notes:** one render at a time (global lock; staging uses the shared
+`remotion/public/assets/`, which the engine wipes each render — that's why its `.gitkeep` gets
+removed). Captions/narration in the render require audio, which is currently blocked by the
+**ElevenLabs free-plan/payment** issue, so the caption layer wasn't render-tested end-to-end (it's
+build-verified and mirrors the verified preview CSS). Verified end-to-end: render with real Pexels
+video assets + transitions + effects → valid h264 1080×1920 MP4 served via `/media`.
 
 ---
 

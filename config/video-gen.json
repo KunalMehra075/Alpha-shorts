@@ -16,6 +16,7 @@
     "perKeywordResults": 15,
     "videoMaxDurationSec": 60,
     "downloadTimeoutMs": 60000,
+    "maxDownloadBytes": 20971520,
     "scoring": {
       "videoBonus": 40,
       "portraitBonus": 60,

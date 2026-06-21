@@ -1,4 +1,5 @@
-import { statSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 // Engine modules (plain JS from the existing CLI pipeline).
 import { generateAudio } from '../../../src/lib/elevenlabs.js';
@@ -19,6 +20,34 @@ const DEFAULT_MODEL = 'eleven_multilingual_v2';
 const OUTPUT_FORMAT = 'mp3_44100_128';
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+const clampSpeed = (n?: number) => Math.min(2, Math.max(1, n || 1));
+
+function run(cmd: string, args: string[]) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (d) => (stderr += d.toString()));
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}\n${stderr}`))));
+  });
+}
+
+// Time-stretch an audio file in place using ffmpeg's atempo (pitch-preserving).
+// Range 1–2x; a single atempo handles up to 2.0. No-op at 1x.
+async function applySpeed(filePath: string, speed: number) {
+  const s = clampSpeed(speed);
+  if (s <= 1.001) return;
+  const ffmpeg = process.env.FFMPEG_BIN || 'ffmpeg';
+  const dot = filePath.lastIndexOf('.');
+  const ext = dot > 0 ? filePath.slice(dot) : '.mp3';
+  const tmp = `${dot > 0 ? filePath.slice(0, dot) : filePath}.spd${ext}`;
+  try {
+    await run(ffmpeg, ['-y', '-i', filePath, '-filter:a', `atempo=${s.toFixed(3)}`, tmp]);
+    renameSync(tmp, filePath);
+  } catch (err: any) {
+    throw new HttpError(502, `Speed adjustment failed: ${err?.message ?? err}`);
+  }
+}
 
 function elevenConfig(voiceId: string, stability: number, similarity: number) {
   return {
@@ -54,8 +83,10 @@ export async function generateTake(opts: {
   voiceId: string;
   stability: number;
   similarity: number;
+  speed?: number;
 }): Promise<AudioVersion> {
   const { id, voiceId, stability, similarity } = opts;
+  const speed = clampSpeed(opts.speed);
 
   const script = getCurrentScript(id);
   const text = script?.voiceoverScript?.trim();
@@ -81,6 +112,9 @@ export async function generateTake(opts: {
   }
   const genTimeSec = Math.round(((Date.now() - t0) / 1000) * 10) / 10;
 
+  // Bake the chosen playback speed into the file (pitch-preserving).
+  await applySpeed(outPath, speed);
+
   const sizeBytes = statSync(outPath).size;
   const durationSec = await probeDuration(outPath, sizeBytes);
 
@@ -93,6 +127,7 @@ export async function generateTake(opts: {
     durationSec,
     sizeBytes,
     genTimeSec,
+    speed,
     source: 'generated',
     createdAt: new Date().toISOString()
   };
@@ -104,8 +139,10 @@ export async function saveUploadedTake(opts: {
   id: string;
   buffer: Buffer;
   originalName: string;
+  speed?: number;
 }): Promise<AudioVersion> {
   const { id, buffer, originalName } = opts;
+  const speed = clampSpeed(opts.speed);
   if (!buffer?.length) throw new HttpError(400, 'Empty upload.');
 
   const version = nextAudioVersion(id);
@@ -115,7 +152,9 @@ export async function saveUploadedTake(opts: {
   const outPath = join(workspaceDir(id), rel);
   writeFileSync(outPath, buffer);
 
-  const sizeBytes = buffer.length;
+  await applySpeed(outPath, speed);
+
+  const sizeBytes = statSync(outPath).size;
   const durationSec = await probeDuration(outPath, sizeBytes);
 
   const take: AudioVersion = {
@@ -127,6 +166,7 @@ export async function saveUploadedTake(opts: {
     durationSec,
     sizeBytes,
     genTimeSec: 0,
+    speed,
     source: 'uploaded',
     createdAt: new Date().toISOString()
   };

@@ -67,7 +67,7 @@ UNIVERSAL RULES (always apply):
 - "searchKeywords" must be concrete and visual. Stay factually accurate.
 - If the brief does not specify a length, target roughly ${Math.max(24, input.sceneCount * 3)}-45 seconds.
 
-LANGUAGE: if the CREATIVE BRIEF specifies a language, write "spokenLine"/"voiceoverScript" in that language; otherwise write in ${lang}.
+LANGUAGE: if the CREATIVE BRIEF specifies a language, write "spokenLine"/"voiceoverScript" in that language; otherwise write in ${lang}. Always use that language's native script — for Hindi, write in Devanagari (e.g. "क्या आपको पता है") and never transliterate into Latin/English letters. Common English loanwords may stay in English.
 
 Respond with ONLY the JSON object.`;
 
