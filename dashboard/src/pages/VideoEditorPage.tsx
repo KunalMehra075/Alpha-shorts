@@ -31,7 +31,7 @@ import {
   useDeleteRender,
   useRenderVideo,
   useRenders,
-  useScript,
+  useScenes,
   useUploadMusic
 } from '@/lib/queries';
 import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
@@ -61,10 +61,10 @@ type Clip = {
 export function VideoEditorPage() {
   const { workspace, id } = useWorkspaceCtx();
   const navigate = useNavigate();
-  const { data: script } = useScript(id);
+  const { data: scenesData } = useScenes(id);
   const { data: caps } = useCaptions(id);
   const { data: assets } = useAssets(id);
-  const scenes = script?.scenes ?? [];
+  const scenes = scenesData ?? [];
   const assetRows = assets?.scenes ?? [];
 
   const editor = useWorkspaceEditor(id);

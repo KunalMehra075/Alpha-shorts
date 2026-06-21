@@ -1,6 +1,6 @@
 # Session Handoff — shorts-generator
 
-_Last updated: 2026-06-21 (Assets + Video Editor steps made functional)_
+_Last updated: 2026-06-21 (Script↔Assets decoupled; Uploader SEO/metadata functional)_
 
 A working snapshot for picking this project up in a fresh session. Read this first.
 
@@ -53,7 +53,7 @@ The dashboard is the focus. The CLI engine is mostly reused by the dashboard ser
 | 3 | Caption Maker | `caption` | **Functional.** Whisper transcription → editable lines/SRT/JSON; style (incl. 0–100 vertical position slider); renders **two playable mp4s** (normal black + green) with narration audio muxed; live CSS preview; render uses edited lines + flushes settings + cache-busts video. |
 | 4 | Assets | `assets` | **Functional.** Per-scene stock search via the engine (`searchAssets` → Pexels/Pixabay/library, gated on `PEXELS_API_KEY`/`PIXABAY_API_KEY`), select → downloads the file into `workspaces/<id>/assets/` (served via `/media`), manual upload, "Auto-fill all", Asset Library. Persisted to the **manifest** `assets` section (`server/src/lib/assets.ts` + `routes/assets.ts`). No AI-gen yet (Image Prompt is saved for later). |
 | 5 | Video Editor | `video` | **Functional render.** Auto timeline + presets + transition icons + scene settings + CSS scrubber preview (reads real assets/captions). "Create Video" runs a **real Remotion render** as a background job (`server/src/lib/video.ts` + `routes/video.ts`): builds `inputProps` from the manifest assets + editor timeline + captions, reuses the engine's `renderVideo()`/`ShortsVideo` composition, and writes an MP4 to `workspaces/<id>/renders/` (served via `/media`). UI **polls** `useRenders` for live progress; gallery plays/downloads/deletes real renders. Captions composite via a new Remotion layer (`remotion/components/Captions.jsx`). Timeline tweaks still live in zustand `editorStore` (sent in the render request); music deferred. |
-| 6 | Video Uploader | `upload` | **UI-only (mock).** SEO fields + mock AI suggestions, platform targets (YouTube active, others "soon"), visibility, mock upload progress + URL. |
+| 6 | Video Uploader | `upload` | **Functional.** Real AI SEO (LLM strategy — `server/src/lib/seo.ts`); metadata persisted to `manifest.upload`; **real YouTube upload** of the latest completed render via Google OAuth2 + Data API v3 (`server/src/lib/youtube.ts`, `googleapis`), as a background job with live progress. Needs `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REFRESH_TOKEN` in `.env` (UI shows a "not connected" state until set). Ported from the user's `youbute-uploader` project. |
 
 Dashboard Home (`HomePage`): workspace CRUD, recents, placeholder stats.
 
@@ -108,12 +108,17 @@ Dashboard Home (`HomePage`): workspace CRUD, recents, placeholder stats.
 ---
 
 ## 8. Suggested next steps (not yet done)
-1. **Functional Uploader (step 6):** YouTube OAuth + Data API upload, real SEO via the LLM.
-2. **AI image generation for Assets:** wire the per-scene "Image Prompt" to higgsfield MCP
-   `generate_image` (or OpenAI images), save the result as the scene's selected asset.
-3. **Video Editor polish:** persist the editor timeline to a manifest `video` section (migrate off
-   localStorage so renders are reproducible server-side); background music (needs a track-upload +
-   mixing/fades); exact caption font embedding in Remotion; `@remotion/player` true-WYSIWYG preview.
+1. **AI image generation for Assets:** wire the per-scene "Image Prompt" to higgsfield MCP
+   `generate_image` (or OpenAI images), save the result as the scene's selected asset. (Needs a
+   provider decision.)
+2. **Video Editor polish:** persist the editor timeline to the manifest (migrate off localStorage so
+   renders are reproducible server-side); background music done; `@remotion/player` true-WYSIWYG
+   preview. (Caption font embedding NOT needed — verified Devanagari + Latin render correctly via the
+   system font + browser fallback.)
+
+_Recent rounds:_ Script↔Assets **decoupled** — Script is narration-only; the scene breakdown is
+built (and edited) in the Assets step from the script OR the caption transcript, persisted at
+`manifest.scenes` (see `docs/scene-breakdown-decoupling.md`). Uploader SEO/metadata made functional.
 
 _Done in recent rounds:_ Assets (step 4) — real stock search + download-on-select + upload +
 auto-fill, persisted to `manifest.assets`. Video Editor (step 5) — real background Remotion render

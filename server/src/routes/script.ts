@@ -70,7 +70,7 @@ scriptRouter.post(
       topic: body.topic,
       promptUsed: body.prompt,
       voiceoverScript: result.voiceoverScript,
-      scenes: result.scenes,
+      scenes: [], // breakdown now happens in the Assets step (manifest.scenes)
       provider: result.provider,
       mock: result.mock
     });

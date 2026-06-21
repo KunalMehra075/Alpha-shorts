@@ -203,14 +203,31 @@ export const Manifest = z.object({
   music: z
     .object({ file: z.string().nullable().default(null), name: z.string().default('') })
     .default({ file: null, name: '' }),
-  scenes: z.array(z.any()).default([]),
+  // Canonical, editable scene-by-scene breakdown (built in the Assets step from
+  // the script OR the caption transcript). `.default([])` so old manifests parse.
+  scenes: z.array(Scene).default([]),
   renders: z.array(RenderRecord).default([]),
   upload: z
     .object({
       platform: z.string().default('youtube'),
-      visibility: z.enum(['public', 'private', 'unlisted']).default('private')
+      visibility: z.enum(['public', 'private', 'unlisted']).default('public'),
+      title: z.string().default(''),
+      description: z.string().default(''),
+      tags: z.array(z.string()).default([]),
+      // Live YouTube publish job state.
+      youtube: z
+        .object({
+          status: z.enum(['idle', 'uploading', 'completed', 'failed']).default('idle'),
+          progress: z.number().default(0),
+          videoId: z.string().nullable().default(null),
+          url: z.string().nullable().default(null),
+          renderId: z.string().nullable().default(null),
+          error: z.string().optional(),
+          uploadedAt: z.string().optional()
+        })
+        .default({ status: 'idle', progress: 0, videoId: null, url: null, renderId: null })
     })
-    .default({ platform: 'youtube', visibility: 'private' })
+    .default({ platform: 'youtube', visibility: 'public', title: '', description: '', tags: [] })
 });
 export type Manifest = z.infer<typeof Manifest>;
 

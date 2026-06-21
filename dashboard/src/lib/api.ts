@@ -2,8 +2,14 @@ import type {
   AssetRef,
   AssetsState,
   AudioState,
+  BreakdownResult,
   RenderRecord,
   RenderTimelinePayload,
+  ScenePatch,
+  SeoSuggestions,
+  UploadMeta,
+  YoutubeState,
+  YoutubeStatus,
   AudioVersion,
   CaptionLine,
   CaptionOverlay,
@@ -141,6 +147,16 @@ export const api = {
   renderCaptionOverlay: (id: string) =>
     request<CaptionOverlay>(`/workspaces/${id}/caption/render`, { method: 'POST' }),
 
+  // scenes (canonical breakdown)
+  getScenes: (id: string) => request<Scene[]>(`/workspaces/${id}/scenes`),
+  buildBreakdown: (id: string) =>
+    request<BreakdownResult>(`/workspaces/${id}/scenes/breakdown`, { method: 'POST' }),
+  updateScene: (id: string, sceneNumber: number, patch: ScenePatch) =>
+    request<Scene[]>(`/workspaces/${id}/scenes/${sceneNumber}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch)
+    }),
+
   // assets
   getAssets: (id: string) => request<AssetsState>(`/workspaces/${id}/assets`),
   searchSceneAssets: (id: string, sceneNumber: number, keywords: string[]) =>
@@ -217,6 +233,16 @@ export const api = {
   },
   deleteMusic: (id: string) =>
     request<MusicTrack>(`/workspaces/${id}/video/music`, { method: 'DELETE' }),
+
+  // upload metadata + SEO
+  getUpload: (id: string) => request<UploadMeta>(`/workspaces/${id}/upload`),
+  saveUpload: (id: string, patch: Partial<UploadMeta>) =>
+    request<UploadMeta>(`/workspaces/${id}/upload`, { method: 'PUT', body: JSON.stringify(patch) }),
+  generateSeo: (id: string) =>
+    request<SeoSuggestions>(`/workspaces/${id}/upload/seo`, { method: 'POST' }),
+  getYoutubeStatus: (id: string) => request<YoutubeStatus>(`/workspaces/${id}/upload/youtube`),
+  publishYoutube: (id: string) =>
+    request<YoutubeState>(`/workspaces/${id}/upload/publish`, { method: 'POST' }),
 
   // templates
   listTemplates: () => request<PromptTemplate[]>('/prompt-templates'),

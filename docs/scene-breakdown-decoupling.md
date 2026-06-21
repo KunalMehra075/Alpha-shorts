@@ -1,6 +1,8 @@
 # Plan: Decouple Script ↔ Assets — make the scene breakdown source-agnostic & editable
 
-_Status: DRAFT for review. No code yet. Approve this, then we implement._
+_Status: IMPLEMENTED (2026-06-21). Decisions applied — D1 narration-only; D2 option (a)
+manifest.scenes canonical + assets layer kept; D3 edit-only (add/remove later); D4 plain join;
+D5 breakdown persisted in the backend at `manifest.scenes`, not in script versions._
 
 ## 1. Problem
 
@@ -132,12 +134,17 @@ Make the breakdown a **canonical, manifest-level artifact** instead of living in
 
 ## 8. Open decisions to confirm (please mark on re-read)
 - **D1 — Script step:** narration-only (recommended) vs. keep a draft breakdown it owns.
+Ans - narration only
 - **D2 — Asset data model:** (a) keep `assets.scenes` keyed by number (small diff) vs. (b) merge
   `selected` into `manifest.scenes` (cleaner). 
+Ans - whichever do you think is best.
 - **D3 — Manual scene add/remove/reorder in Assets:** in v1, or just edit fields/durations for now?
+Ans - Manual scene add/remove/reorder will be done in later, just work on edit fields/durations 
 - **D4 — Transcript→script join:** plain concatenation of caption lines is fine? (We ignore caption
   *timings* entirely; we only reuse the words as a text source.)
+Ans - Fine
 - **D5 — Script-step `scenes`:** stop persisting on script versions, or keep for history?
+Ans - its fine to not store scenes in script version, but confirm me if we are storing the scenes in BE that gets generated in assets page or not. 
 
 ## 9. Non-goals (for this round)
 - Changing audio/caption/video-editor behavior beyond where they read `scenes`.

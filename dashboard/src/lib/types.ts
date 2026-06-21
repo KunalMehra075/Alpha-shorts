@@ -143,9 +143,38 @@ export type Manifest = WorkspaceSummary & {
   captions: CaptionsState;
   assets: AssetsState;
   music: MusicTrack;
-  scenes: unknown[];
+  scenes: Scene[];
   renders: RenderRecord[];
-  upload: { platform: string; visibility: 'public' | 'private' | 'unlisted' };
+  upload: UploadMeta;
+};
+
+export type YoutubeState = {
+  status: 'idle' | 'uploading' | 'completed' | 'failed';
+  progress: number;
+  videoId: string | null;
+  url: string | null;
+  renderId: string | null;
+  error?: string;
+  uploadedAt?: string;
+};
+
+export type YoutubeStatus = YoutubeState & { configured: boolean };
+
+export type UploadMeta = {
+  platform: string;
+  visibility: 'public' | 'private' | 'unlisted';
+  title: string;
+  description: string;
+  tags: string[];
+  youtube: YoutubeState;
+};
+
+export type SeoSuggestions = {
+  titles: string[];
+  descriptions: string[];
+  tags: string[];
+  provider: string;
+  mock: boolean;
 };
 
 export type Scene = {
@@ -158,6 +187,17 @@ export type Scene = {
   visualDescription: string;
   imagePrompt: string;
 };
+
+export type ScenePatch = {
+  spokenLine?: string;
+  visualType?: VisualType;
+  searchKeywords?: string[];
+  imagePrompt?: string;
+  visualDescription?: string;
+  durationSec?: number;
+};
+
+export type BreakdownResult = { scenes: Scene[]; provider: string; mock: boolean; source: 'script' | 'transcript' };
 
 export type ScriptVersion = {
   version: number;

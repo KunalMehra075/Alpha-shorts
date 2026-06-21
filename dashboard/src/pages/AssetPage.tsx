@@ -10,6 +10,7 @@ import {
   Search,
   Sparkles,
   Upload,
+  Wand2,
   X
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -18,6 +19,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TabHeader } from '@/components/TabHeader';
@@ -25,25 +27,26 @@ import { cn } from '@/lib/utils';
 import {
   useAssets,
   useAutofillAssets,
+  useBuildBreakdown,
   useClearSceneAsset,
-  useSaveSceneMeta,
-  useScript,
+  useScenes,
   useSearchSceneAssets,
   useSelectSceneAsset,
+  useUpdateScene,
   useUploadSceneAsset
 } from '@/lib/queries';
 import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
 import { placeholderDataUri } from '@/lib/placeholder';
 import { formatBytes } from '@/lib/mockMedia';
-import type { AssetRef, Scene, SceneAssets } from '@/lib/types';
+import type { AssetRef, Scene, SceneAssets, ScenePatch, VisualType } from '@/lib/types';
 
-// Media URL for a downloaded/uploaded workspace file (cache-busted by size so a
-// re-selected scene-N file doesn't show the stale cached version).
+const VISUAL_TYPES: VisualType[] = ['Image', 'Video', 'Animation', 'SplitScreen'];
+const EMPTY_ROW = { sceneNumber: 0, keywords: [], imagePrompt: '', candidates: [], selected: null } satisfies SceneAssets;
+
 function mediaUrl(id: string, file: string, bust: number) {
   return `/media/${id}/${file}?v=${bust}`;
 }
 
-// Best preview image URL for an asset ref, or null (caller falls back to a tile).
 function thumbFor(id: string, ref: AssetRef | null): string | null {
   if (!ref) return null;
   if (ref.thumbUrl) return ref.thumbUrl;
@@ -54,87 +57,115 @@ function thumbFor(id: string, ref: AssetRef | null): string | null {
 export function AssetPage() {
   const { workspace, id } = useWorkspaceCtx();
   const navigate = useNavigate();
-  const { data: script } = useScript(id);
+  const { data: scenesData, isLoading: scenesLoading } = useScenes(id);
   const { data: assets } = useAssets(id);
-  const scenes = script?.scenes ?? [];
+  const scenes = scenesData ?? [];
   const rows = assets?.scenes ?? [];
 
+  const build = useBuildBreakdown(id);
+  const updateScene = useUpdateScene(id);
   const search = useSearchSceneAssets(id);
   const select = useSelectSceneAsset(id);
   const clear = useClearSceneAsset(id);
-  const saveMeta = useSaveSceneMeta(id);
   const upload = useUploadSceneAsset(id);
   const autofill = useAutofillAssets(id);
 
   const [selected, setSelected] = useState(0);
 
+  const runBuild = async () => {
+    try {
+      const r = await build.mutateAsync();
+      toast.success(`Breakdown built from your ${r.source} — ${r.scenes.length} scenes`);
+      setSelected(0);
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+
+  // No breakdown yet → offer to build it from script or transcript.
   if (!scenes.length) {
     return (
       <div className="animate-fade-in">
         <TabHeader
           icon={Images}
           title="Assets"
-          description="Gather and assign a visual to every scene."
+          description="Plan the scene-by-scene breakdown, then assign a visual to each scene."
           status={workspace.stages.assets.status}
         />
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center gap-3 p-12 text-center">
             <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
-              <Film className="size-7 text-muted-foreground" />
+              <Wand2 className="size-7 text-muted-foreground" />
             </div>
-            <p className="text-base font-semibold">No scenes yet</p>
-            <p className="max-w-sm text-sm text-muted-foreground">
-              Generate a script with a scene breakdown first — each scene gets its own asset here.
+            <p className="text-base font-semibold">No scene breakdown yet</p>
+            <p className="max-w-md text-sm text-muted-foreground">
+              Build a scene-by-scene breakdown from your <span className="font-medium">script</span> —
+              or, if you skipped the Script step, from your <span className="font-medium">audio's
+              caption transcript</span>. Every field stays editable afterwards.
             </p>
-            <Button variant="primary" onClick={() => navigate(`/w/${id}/script`)}>
-              Go to Script Generator
+            <Button variant="primary" onClick={runBuild} disabled={build.isPending || scenesLoading}>
+              {build.isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Building…
+                </>
+              ) : (
+                <>
+                  <Wand2 className="size-4" /> Build scene breakdown
+                </>
+              )}
             </Button>
+            <p className="text-[11px] text-muted-foreground">
+              Needs a script (step 1) or audio + captions (steps 2–3) first.
+            </p>
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  const rowFor = (s: Scene, i: number): SceneAssets | undefined =>
-    rows.find((r) => r.sceneNumber === (s.scene ?? i + 1));
+  const rowFor = (s: Scene, i: number): SceneAssets =>
+    rows.find((r) => r.sceneNumber === (s.scene ?? i + 1)) ?? { ...EMPTY_ROW, sceneNumber: s.scene ?? i + 1 };
 
-  const selScene = scenes[selected];
-  const selNumber = selScene.scene ?? selected + 1;
-  const selRow = rowFor(selScene, selected);
-  const assignedCount = scenes.filter((s, i) => rowFor(s, i)?.selected).length;
+  const selScene = scenes[selected] ?? scenes[0];
+  const selIndex = scenes[selected] ? selected : 0;
+  const selNumber = selScene.scene ?? selIndex + 1;
+  const selRow = rowFor(selScene, selIndex);
+  const assignedCount = scenes.filter((s, i) => rowFor(s, i).selected).length;
 
   return (
     <div className="animate-fade-in">
       <TabHeader
         icon={Images}
         title="Assets"
-        description="Search stock, pick a visual for each scene, or upload your own."
+        description="Edit the breakdown and assign a visual to each scene."
         status={workspace.stages.assets.status}
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={autofill.isPending}
-            onClick={async () => {
-              try {
-                await autofill.mutateAsync();
-                toast.success('Auto-filled scenes from top stock results');
-              } catch (e: any) {
-                toast.error(String(e.message ?? e));
-              }
-            }}
-          >
-            {autofill.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Sparkles className="size-4" />
-            )}
-            Auto-fill all
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={build.isPending} onClick={runBuild}>
+              {build.isPending ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
+              Rebuild breakdown
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={autofill.isPending}
+              onClick={async () => {
+                try {
+                  await autofill.mutateAsync();
+                  toast.success('Auto-filled scenes from top stock results');
+                } catch (e: any) {
+                  toast.error(String(e.message ?? e));
+                }
+              }}
+            >
+              {autofill.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              Auto-fill all
+            </Button>
+          </div>
         }
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,440px)]">
         {/* Scene table */}
         <Card className="min-w-0">
           <CardContent className="p-0">
@@ -152,18 +183,18 @@ export function AssetPage() {
                 <tbody>
                   {scenes.map((s, i) => {
                     const r = rowFor(s, i);
-                    const thumb = thumbFor(id, r?.selected ?? null);
+                    const thumb = thumbFor(id, r.selected);
                     return (
                       <tr
                         key={i}
                         onClick={() => setSelected(i)}
                         className={cn(
                           'cursor-pointer border-b border-border/60 transition-colors',
-                          selected === i ? 'bg-accent/10' : 'hover:bg-muted/50'
+                          selIndex === i ? 'bg-accent/10' : 'hover:bg-muted/50'
                         )}
                       >
                         <td className="p-3 align-top">
-                          <Badge variant={selected === i ? 'accent' : 'default'}>{i + 1}</Badge>
+                          <Badge variant={selIndex === i ? 'accent' : 'default'}>{i + 1}</Badge>
                         </td>
                         <td className="max-w-[260px] p-3 align-top">
                           <p className="line-clamp-2 text-foreground/90">{s.spokenLine || '—'}</p>
@@ -173,7 +204,7 @@ export function AssetPage() {
                         </td>
                         <td className="max-w-[160px] p-3 align-top">
                           <div className="flex flex-wrap gap-1">
-                            {(r?.keywords ?? []).slice(0, 3).map((k) => (
+                            {(s.searchKeywords ?? []).slice(0, 3).map((k) => (
                               <span
                                 key={k}
                                 className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
@@ -184,13 +215,9 @@ export function AssetPage() {
                           </div>
                         </td>
                         <td className="p-3 align-top">
-                          {r?.selected ? (
+                          {r.selected ? (
                             thumb ? (
-                              <img
-                                src={thumb}
-                                alt=""
-                                className="h-12 w-8 rounded object-cover ring-1 ring-border"
-                              />
+                              <img src={thumb} alt="" className="h-12 w-8 rounded object-cover ring-1 ring-border" />
                             ) : (
                               <span className="inline-flex h-12 w-8 items-center justify-center rounded bg-muted ring-1 ring-border">
                                 <Film className="size-4 text-muted-foreground" />
@@ -211,45 +238,34 @@ export function AssetPage() {
 
         {/* Inspector — remounts per scene so local edits reset cleanly */}
         <div className="flex min-w-0 flex-col gap-5 xl:sticky xl:top-4 xl:self-start">
-          {selRow && (
-            <SceneInspector
-              key={selNumber}
-              id={id}
-              index={selected}
-              sceneNumber={selNumber}
-              spokenLine={selScene.spokenLine}
-              row={selRow}
-              searching={search.isPending && search.variables?.sceneNumber === selNumber}
-              selecting={select.isPending}
-              onSearch={(keywords) =>
-                search.mutateAsync({ sceneNumber: selNumber, keywords }).catch((e) =>
-                  toast.error(String(e.message ?? e))
-                )
-              }
-              onSelect={(ref) =>
-                select.mutateAsync({ sceneNumber: selNumber, ref }).catch((e) =>
-                  toast.error(String(e.message ?? e))
-                )
-              }
-              onClear={() => clear.mutate(selNumber)}
-              onSaveMeta={(keywords, imagePrompt) =>
-                saveMeta.mutate({ sceneNumber: selNumber, keywords, imagePrompt })
-              }
-              onUpload={(file) =>
-                upload.mutateAsync({ sceneNumber: selNumber, file }).then(
-                  () => toast.success('Uploaded'),
-                  (e) => toast.error(String(e.message ?? e))
-                )
-              }
-            />
-          )}
+          <SceneInspector
+            key={selNumber}
+            id={id}
+            index={selIndex}
+            sceneNumber={selNumber}
+            scene={selScene}
+            row={selRow}
+            searching={search.isPending && search.variables?.sceneNumber === selNumber}
+            selecting={select.isPending}
+            onUpdate={(patch) => updateScene.mutate({ sceneNumber: selNumber, patch })}
+            onSearch={(keywords) =>
+              search.mutateAsync({ sceneNumber: selNumber, keywords }).catch((e) => toast.error(String(e.message ?? e)))
+            }
+            onSelect={(ref) =>
+              select.mutateAsync({ sceneNumber: selNumber, ref }).catch((e) => toast.error(String(e.message ?? e)))
+            }
+            onClear={() => clear.mutate(selNumber)}
+            onUpload={(file) =>
+              upload
+                .mutateAsync({ sceneNumber: selNumber, file })
+                .then(() => toast.success('Uploaded'), (e) => toast.error(String(e.message ?? e)))
+            }
+          />
         </div>
       </div>
 
-      {/* Asset library */}
       <AssetLibrary id={id} rows={rows} />
 
-      {/* Footer */}
       <div className="mt-5 flex items-center justify-between rounded-xl border border-border bg-card p-4">
         <p className="text-sm text-muted-foreground">
           {assignedCount}/{scenes.length} scenes have an assigned asset.
@@ -266,49 +282,51 @@ function SceneInspector({
   id,
   index,
   sceneNumber,
-  spokenLine,
+  scene,
   row,
   searching,
   selecting,
+  onUpdate,
   onSearch,
   onSelect,
   onClear,
-  onSaveMeta,
   onUpload
 }: {
   id: string;
   index: number;
   sceneNumber: number;
-  spokenLine: string;
+  scene: Scene;
   row: SceneAssets;
   searching: boolean;
   selecting: boolean;
+  onUpdate: (patch: ScenePatch) => void;
   onSearch: (keywords: string[]) => void;
   onSelect: (ref: AssetRef) => void;
   onClear: () => void;
-  onSaveMeta: (keywords: string[], imagePrompt: string) => void;
   onUpload: (file: File) => void;
 }) {
-  const [keywords, setKeywords] = useState(row.keywords.join(', '));
-  const [imagePrompt, setImagePrompt] = useState(row.imagePrompt);
+  // Local draft of the editable breakdown fields (debounced → updateScene).
+  const [spokenLine, setSpokenLine] = useState(scene.spokenLine);
+  const [keywords, setKeywords] = useState(scene.searchKeywords.join(', '));
+  const [imagePrompt, setImagePrompt] = useState(scene.imagePrompt);
+  const [visualDescription, setVisualDescription] = useState(scene.visualDescription);
+  const [durationSec, setDurationSec] = useState(Math.max(0.5, Math.round((scene.end - scene.start) * 10) / 10));
   const [dirty, setDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const saveRef = useRef(onSaveMeta);
-  saveRef.current = onSaveMeta;
+  const updateRef = useRef(onUpdate);
+  updateRef.current = onUpdate;
 
-  const parsedKeywords = () =>
-    keywords.split(',').map((k) => k.trim()).filter(Boolean);
+  const parsedKeywords = () => keywords.split(',').map((k) => k.trim()).filter(Boolean);
 
-  // Debounced persist of keyword/prompt edits (no API search on its own).
   useEffect(() => {
     if (!dirty) return;
     const h = setTimeout(() => {
-      saveRef.current(parsedKeywords(), imagePrompt);
+      updateRef.current({ spokenLine, searchKeywords: parsedKeywords(), imagePrompt, visualDescription, durationSec });
       setDirty(false);
     }, 900);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keywords, imagePrompt, dirty]);
+  }, [spokenLine, keywords, imagePrompt, visualDescription, durationSec, dirty]);
 
   const candidates = row.candidates;
   const selected = row.selected;
@@ -316,16 +334,52 @@ function SceneInspector({
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-5 p-5">
+      <CardContent className="flex flex-col gap-4 p-5">
         <div className="flex items-center gap-2">
-          <Badge variant="accent" className="whitespace-nowrap text-sm">
-            Scene {index + 1}
-          </Badge>
-          <p className="line-clamp-1 text-sm text-muted-foreground">{spokenLine}</p>
+          <Badge variant="accent" className="whitespace-nowrap text-sm">Scene {index + 1}</Badge>
+          <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Duration</span>
+            <Input
+              type="number"
+              min={0.5}
+              step={0.5}
+              value={durationSec}
+              onChange={(e) => {
+                setDurationSec(Math.max(0.5, Number(e.target.value) || 0.5));
+                setDirty(true);
+              }}
+              className="h-8 w-20 text-sm"
+            />
+            <span>s</span>
+            <Select
+              value={scene.visualType}
+              onChange={(e) => onUpdate({ visualType: e.target.value as VisualType })}
+              className="h-8 w-32 text-xs"
+            >
+              {VISUAL_TYPES.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+
+        {/* Spoken line */}
+        <div className="grid gap-1.5">
+          <Label>Spoken line</Label>
+          <Textarea
+            value={spokenLine}
+            onChange={(e) => {
+              setSpokenLine(e.target.value);
+              setDirty(true);
+            }}
+            className="min-h-[56px] text-sm"
+          />
         </div>
 
         {/* Current asset */}
-        <div className="grid gap-2 max-w-full">
+        <div className="grid max-w-full gap-2">
           <Label>Selected asset</Label>
           {selected ? (
             <div className="flex items-center gap-3 rounded-lg border border-border p-3">
@@ -336,8 +390,8 @@ function SceneInspector({
                   <Film className="size-5 text-muted-foreground" />
                 </span>
               )}
-              <div className="min-w-0 flex-1 max-w-[310px]">
-                <p className="truncate text-sm font-medium ">{selected.label || selected.kind}</p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{selected.label || selected.kind}</p>
                 <p className="text-xs capitalize text-muted-foreground">
                   {selected.kind} · {selected.source}
                   {selected.sizeBytes ? ` · ${formatBytes(selected.sizeBytes)}` : ''}
@@ -349,18 +403,10 @@ function SceneInspector({
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => fileRef.current?.click()}
-              >
+              <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
                 <ImagePlus className="size-4" /> Upload image
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => fileRef.current?.click()}
-              >
+              <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
                 <Upload className="size-4" /> Upload video
               </Button>
               <input
@@ -379,7 +425,7 @@ function SceneInspector({
         </div>
 
         {/* Keywords + search */}
-        <div className="grid gap-2">
+        <div className="grid gap-1.5">
           <Label>Search keywords</Label>
           <div className="flex gap-2">
             <Input
@@ -391,21 +437,28 @@ function SceneInspector({
               className="h-9 text-sm"
               placeholder="underwater ruins, ancient city"
             />
-            <Button
-              variant="primary"
-              size="sm"
-              className="shrink-0"
-              disabled={searching}
-              onClick={() => onSearch(parsedKeywords())}
-            >
+            <Button variant="primary" size="sm" className="shrink-0" disabled={searching} onClick={() => onSearch(parsedKeywords())}>
               {searching ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
               Search
             </Button>
           </div>
         </div>
 
-        {/* Image prompt (persisted; AI generation comes later) */}
-        <div className="grid gap-2">
+        {/* Visual description */}
+        <div className="grid gap-1.5">
+          <Label>Visual description</Label>
+          <Input
+            value={visualDescription}
+            onChange={(e) => {
+              setVisualDescription(e.target.value);
+              setDirty(true);
+            }}
+            className="h-9 text-sm"
+          />
+        </div>
+
+        {/* AI image prompt */}
+        <div className="grid gap-1.5">
           <Label>AI image prompt</Label>
           <Textarea
             value={imagePrompt}
@@ -413,19 +466,18 @@ function SceneInspector({
               setImagePrompt(e.target.value);
               setDirty(true);
             }}
-            className="min-h-[100px] font-mono text-[12px] leading-relaxed"
+            className="min-h-[80px] font-mono text-[12px] leading-relaxed"
             placeholder="Saved for later — AI image generation is wired in a future round."
           />
         </div>
 
         {/* Suggestions */}
-        <div className="grid gap-2">
+        <div className="grid gap-1.5">
           <Label>Suggested assets</Label>
           {candidates.length === 0 ? (
             <p className="rounded-lg bg-muted/50 p-4 text-center text-xs text-muted-foreground">
               No suggestions yet — click <span className="font-medium">Search</span>. Stock results
-              need <code>PEXELS_API_KEY</code> / <code>PIXABAY_API_KEY</code> set in your{' '}
-              <code>.env</code>.
+              need <code>PEXELS_API_KEY</code> / <code>PIXABAY_API_KEY</code> in your <code>.env</code>.
             </p>
           ) : (
             <div className="grid grid-cols-3 gap-2">
@@ -482,11 +534,7 @@ function AssetLibrary({ id, rows }: { id: string; rows: SceneAssets[] }) {
           const t = thumbFor(id, a) ?? placeholderDataUri(`${a.source}-${i}`, { ratio: '9:16' });
           return (
             <div key={`${a.file ?? a.downloadUrl ?? i}`} className="relative">
-              <img
-                src={t}
-                alt=""
-                className="aspect-[9/16] w-full rounded-md object-cover ring-1 ring-border"
-              />
+              <img src={t} alt="" className="aspect-[9/16] w-full rounded-md object-cover ring-1 ring-border" />
               {a.kind === 'video' && (
                 <span className="absolute bottom-1 left-1 rounded bg-black/60 p-0.5">
                   <Play className="size-2.5 text-white" />

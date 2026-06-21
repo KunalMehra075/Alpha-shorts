@@ -59,7 +59,7 @@ export function HomePage() {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Shorts Studio</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight">Alpha Shorts Studio</h1>
           <p className="mt-1 text-muted-foreground">
             Your content-creation operating system — topic to upload, fast.
           </p>

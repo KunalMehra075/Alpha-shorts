@@ -1,4 +1,4 @@
-# Shorts Studio — Dashboard
+# Alpha Shorts Studio — Dashboard
 
 A personal, local web dashboard for the shorts pipeline (React + TypeScript +
 Tailwind + ShadCN-style UI), backed by a small Express API that reuses the

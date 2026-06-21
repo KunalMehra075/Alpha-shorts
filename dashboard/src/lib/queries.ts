@@ -14,6 +14,7 @@ export const qk = {
   voices: ['voices'] as const,
   audio: (id: string) => ['audio', id] as const,
   captions: (id: string) => ['captions', id] as const,
+  scenes: (id: string) => ['scenes', id] as const,
   assets: (id: string) => ['assets', id] as const,
   renders: (id: string) => ['renders', id] as const,
   templates: ['templates'] as const,
@@ -233,6 +234,39 @@ export function useRenderCaptionOverlay(id: string) {
   });
 }
 
+// ── Scenes (canonical breakdown) ──────────────────────────────────────────────
+export function useScenes(id: string | undefined) {
+  return useQuery({
+    queryKey: qk.scenes(id ?? ''),
+    queryFn: () => api.getScenes(id!),
+    enabled: !!id
+  });
+}
+
+export function useBuildBreakdown(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.buildBreakdown(id),
+    onSuccess: (r) => {
+      qc.setQueryData(qk.scenes(id), r.scenes);
+      qc.invalidateQueries({ queryKey: qk.scenes(id) });
+      qc.invalidateQueries({ queryKey: qk.assets(id) });
+      qc.invalidateQueries({ queryKey: qk.workspace(id) });
+      qc.invalidateQueries({ queryKey: qk.workspaces });
+    }
+  });
+}
+
+export function useUpdateScene(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sceneNumber, patch }: { sceneNumber: number; patch: import('./types').ScenePatch }) =>
+      api.updateScene(id, sceneNumber, patch),
+    // Update the cache in place so edits don't refetch/clobber in-progress typing.
+    onSuccess: (scenes) => qc.setQueryData(qk.scenes(id), scenes)
+  });
+}
+
 // ── Assets ──────────────────────────────────────────────────────────────────────
 export function useAssets(id: string | undefined) {
   return useQuery({
@@ -364,6 +398,52 @@ export function useDeleteMusic(id: string) {
   return useMutation({
     mutationFn: () => api.deleteMusic(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspace(id) })
+  });
+}
+
+// ── Upload metadata + SEO ─────────────────────────────────────────────────────
+export function useUpload(id: string | undefined) {
+  return useQuery({
+    queryKey: ['upload', id ?? ''] as const,
+    queryFn: () => api.getUpload(id!),
+    enabled: !!id
+  });
+}
+
+export function useSaveUpload(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<import('./types').UploadMeta>) => api.saveUpload(id, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.workspace(id) });
+      qc.invalidateQueries({ queryKey: qk.workspaces });
+    }
+  });
+}
+
+export function useGenerateSeo(id: string) {
+  return useMutation({ mutationFn: () => api.generateSeo(id) });
+}
+
+export function useYoutubeStatus(id: string | undefined) {
+  return useQuery({
+    queryKey: ['youtube', id ?? ''] as const,
+    queryFn: () => api.getYoutubeStatus(id!),
+    enabled: !!id,
+    refetchInterval: (q) => (q.state.data?.status === 'uploading' ? 1500 : false)
+  });
+}
+
+export function usePublishYoutube(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.publishYoutube(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['youtube', id] });
+      qc.invalidateQueries({ queryKey: qk.workspace(id) });
+      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.stats });
+    }
   });
 }
 

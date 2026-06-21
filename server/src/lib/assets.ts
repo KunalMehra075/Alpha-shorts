@@ -10,6 +10,7 @@ import {
   assetsDir,
   ensureSceneRows,
   getAssetsState,
+  getScenes,
   setSceneAssets
 } from './store';
 import type { AssetRef } from './schema';
@@ -188,12 +189,18 @@ export function uploadScene(opts: {
 export async function autofill(opts: { id: string }) {
   const { id } = opts;
   ensureSceneRows(id);
-  const state = getAssetsState(id);
-  for (const row of state.scenes) {
-    if (row.selected || !row.keywords?.length) continue;
-    const best = await searchAsset({ keywords: row.keywords, config: assetConfig() });
+  const scenes = getScenes(id); // keywords live on the canonical breakdown
+  const selectedByNum = new Map(getAssetsState(id).scenes.map((r) => [r.sceneNumber, r.selected]));
+
+  for (let i = 0; i < scenes.length; i++) {
+    const sc = scenes[i];
+    const num = sc.scene ?? i + 1;
+    if (selectedByNum.get(num)) continue; // already has an asset
+    const keywords = sc.searchKeywords ?? [];
+    if (!keywords.length) continue;
+    const best = await searchAsset({ keywords, config: assetConfig() });
     if (!best) continue;
-    await selectScene({ id, sceneNumber: row.sceneNumber, ref: toRef(best) });
+    await selectScene({ id, sceneNumber: num, ref: toRef(best) });
   }
   return getAssetsState(id);
 }

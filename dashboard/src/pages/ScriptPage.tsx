@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ArrowRight,
   Check,
   History,
   Loader2,
-  Plus,
   RotateCcw,
   Save,
   Sparkles,
-  Trash2,
   Wand2
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -38,12 +38,10 @@ import {
   useTemplates
 } from '@/lib/queries';
 import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
-import type { Scene, VisualType } from '@/lib/types';
-
-const VISUAL_TYPES: VisualType[] = ['Image', 'Video', 'Animation', 'SplitScreen'];
 
 export function ScriptPage() {
   const { workspace, id } = useWorkspaceCtx();
+  const navigate = useNavigate();
   const { data: script, isLoading } = useScript(id);
 
   const generate = useGenerateScript(id);
@@ -53,7 +51,6 @@ export function ScriptPage() {
   const [prompt, setPrompt] = useState('');
   const [topic, setTopic] = useState('');
   const [voiceover, setVoiceover] = useState('');
-  const [scenes, setScenes] = useState<Scene[]>([]);
   const [dirty, setDirty] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -63,7 +60,6 @@ export function ScriptPage() {
   useEffect(() => {
     if (script) {
       setVoiceover(script.voiceoverScript);
-      setScenes(script.scenes);
       if (script.topic) setTopic(script.topic);
       if (script.promptUsed) setPrompt(script.promptUsed);
       setDirty(false);
@@ -78,7 +74,7 @@ export function ScriptPage() {
     if (!dirty || !script) return;
     const handle = setTimeout(async () => {
       try {
-        await saveRef.current.mutateAsync({ voiceoverScript: voiceover, scenes, topic, promptUsed: prompt });
+        await saveRef.current.mutateAsync({ voiceoverScript: voiceover, topic, promptUsed: prompt });
         setDirty(false);
         setSavedFlash(true);
         setTimeout(() => setSavedFlash(false), 1500);
@@ -88,7 +84,7 @@ export function ScriptPage() {
     }, 900);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceover, scenes, dirty]);
+  }, [voiceover, dirty]);
 
   const markDirty = () => setDirty(true);
 
@@ -101,37 +97,6 @@ export function ScriptPage() {
     } catch (e: any) {
       toast.error(String(e.message ?? e));
     }
-  };
-
-  const updateScene = (i: number, patch: Partial<Scene>) => {
-    setScenes((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
-    markDirty();
-  };
-
-  const addScene = () => {
-    setScenes((prev) => {
-      const last = prev[prev.length - 1];
-      const start = last ? last.end : 0;
-      return [
-        ...prev,
-        {
-          scene: prev.length + 1,
-          start,
-          end: start + 3,
-          spokenLine: '',
-          visualType: 'Image',
-          searchKeywords: [],
-          visualDescription: '',
-          imagePrompt: ''
-        }
-      ];
-    });
-    markDirty();
-  };
-
-  const removeScene = (i: number) => {
-    setScenes((prev) => prev.filter((_, idx) => idx !== i).map((s, idx) => ({ ...s, scene: idx + 1 })));
-    markDirty();
   };
 
   const hasScript = !!script;
@@ -276,31 +241,20 @@ export function ScriptPage() {
                       setVoiceover(e.target.value);
                       markDirty();
                     }}
-                    className="min-h-[160px] text-sm leading-relaxed"
+                    className="min-h-[320px] text-sm leading-relaxed"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Just the narration. The scene-by-scene visual breakdown is built (and editable) in
+                    the <span className="font-medium text-foreground">Assets</span> step — from this
+                    script, or from your audio's transcript if you skip this step.
+                  </p>
+                  <div className="flex justify-end">
+                    <Button variant="primary" size="sm" onClick={() => navigate(`/w/${id}/audio`)}>
+                      Proceed to Audio <ArrowRight className="size-4" />
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
-
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">
-                  Scene Breakdown
-                  <span className="ml-2 text-muted-foreground">{scenes.length} scenes</span>
-                </h3>
-                <Button variant="outline" size="sm" onClick={addScene}>
-                  <Plus className="size-4" /> Add scene
-                </Button>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                {scenes.map((s, i) => (
-                  <SceneCard
-                    key={i}
-                    scene={s}
-                    onChange={(patch) => updateScene(i, patch)}
-                    onRemove={() => removeScene(i)}
-                  />
-                ))}
-              </div>
             </>
           )}
         </div>
@@ -329,101 +283,9 @@ function EmptyScript() {
         <div>
           <p className="text-base font-semibold">No script yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Enter a topic and click Generate to create your voiceover script and scene breakdown.
+            Enter a topic and click Generate to write your voiceover script. (Optional — you can also
+            skip this and upload your own audio in the next step.)
           </p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function SceneCard({
-  scene,
-  onChange,
-  onRemove
-}: {
-  scene: Scene;
-  onChange: (patch: Partial<Scene>) => void;
-  onRemove: () => void;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-3 p-4">
-        <div className="flex items-center gap-2">
-          <Badge variant="accent">Scene {scene.scene}</Badge>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Input
-              type="number"
-              value={scene.start}
-              onChange={(e) => onChange({ start: Number(e.target.value) })}
-              className="h-7 w-16 text-xs"
-            />
-            <span>→</span>
-            <Input
-              type="number"
-              value={scene.end}
-              onChange={(e) => onChange({ end: Number(e.target.value) })}
-              className="h-7 w-16 text-xs"
-            />
-            <span>sec</span>
-          </div>
-          <Select
-            value={scene.visualType}
-            onChange={(e) => onChange({ visualType: e.target.value as VisualType })}
-            className="ml-auto h-7 w-36 text-xs"
-          >
-            {VISUAL_TYPES.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </Select>
-          <Button variant="ghost" size="icon" className="size-7 text-destructive" onClick={onRemove}>
-            <Trash2 className="size-4" />
-          </Button>
-        </div>
-
-        <Textarea
-          value={scene.spokenLine}
-          onChange={(e) => onChange({ spokenLine: e.target.value })}
-          placeholder="Spoken line…"
-          className="min-h-[52px] text-sm"
-        />
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="grid gap-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Keywords (comma separated)</label>
-            <Input
-              value={scene.searchKeywords.join(', ')}
-              onChange={(e) =>
-                onChange({
-                  searchKeywords: e.target.value
-                    .split(',')
-                    .map((k) => k.trim())
-                    .filter(Boolean)
-                })
-              }
-              placeholder="brain, neurons, science"
-              className="h-9 text-sm"
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Visual description</label>
-            <Input
-              value={scene.visualDescription}
-              onChange={(e) => onChange({ visualDescription: e.target.value })}
-              className="h-9 text-sm"
-            />
-          </div>
-        </div>
-
-        <div className="grid gap-1.5">
-          <label className="text-xs font-medium text-muted-foreground">AI image prompt</label>
-          <Textarea
-            value={scene.imagePrompt}
-            onChange={(e) => onChange({ imagePrompt: e.target.value })}
-            className="min-h-[44px] font-mono text-[12px] leading-relaxed"
-          />
         </div>
       </CardContent>
     </Card>

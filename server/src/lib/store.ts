@@ -25,6 +25,7 @@ import {
   type AudioVersion,
   type Language,
   type RenderRecord,
+  type Scene,
   type StageStatus,
   type WorkspaceSummary
 } from './schema';
@@ -257,6 +258,73 @@ export function restoreScriptVersion(id: string, version: number): ScriptVersion
   return sv;
 }
 
+// ── Scenes (canonical breakdown) ──────────────────────────────────────────────
+
+// Re-flow scene numbers + contiguous start/end from each scene's own duration.
+function recomputeTimings(scenes: Scene[]): Scene[] {
+  let t = 0;
+  return scenes.map((s, i) => {
+    const raw = (s.end ?? 0) - (s.start ?? 0);
+    const dur = Math.max(0.5, raw > 0 ? raw : 3);
+    const start = Math.round(t * 100) / 100;
+    const end = Math.round((t + dur) * 100) / 100;
+    t = end;
+    return { ...s, scene: i + 1, start, end };
+  });
+}
+
+// The editable breakdown. Backfills once from the current script version so
+// pre-existing workspaces (which stored scenes on the script) keep working.
+export function getScenes(id: string): Scene[] {
+  const m = readManifest(id);
+  if (m.scenes.length === 0 && m.script.currentVersion != null) {
+    const file = scriptVersionPath(id, m.script.currentVersion);
+    if (existsSync(file)) {
+      const sv = ScriptVersion.parse(readJson(file));
+      if (sv.scenes?.length) {
+        m.scenes = sv.scenes;
+        writeManifest(m);
+      }
+    }
+  }
+  return m.scenes;
+}
+
+export function setScenes(id: string, scenes: Scene[]): Scene[] {
+  const m = readManifest(id);
+  m.scenes = recomputeTimings(scenes);
+  writeManifest(m);
+  return m.scenes;
+}
+
+export type ScenePatch = {
+  spokenLine?: string;
+  visualType?: Scene['visualType'];
+  searchKeywords?: string[];
+  imagePrompt?: string;
+  visualDescription?: string;
+  durationSec?: number;
+};
+
+export function updateScene(id: string, sceneNumber: number, patch: ScenePatch): Scene[] {
+  const m = readManifest(id);
+  const idx = m.scenes.findIndex((s) => s.scene === sceneNumber);
+  if (idx < 0) throw new HttpError(404, `Scene ${sceneNumber} not found.`);
+  const cur = { ...m.scenes[idx] };
+  if (patch.spokenLine !== undefined) cur.spokenLine = patch.spokenLine;
+  if (patch.visualType !== undefined) cur.visualType = patch.visualType;
+  if (patch.searchKeywords !== undefined) cur.searchKeywords = patch.searchKeywords;
+  if (patch.imagePrompt !== undefined) cur.imagePrompt = patch.imagePrompt;
+  if (patch.visualDescription !== undefined) cur.visualDescription = patch.visualDescription;
+  if (patch.durationSec !== undefined && patch.durationSec > 0) {
+    cur.end = cur.start + patch.durationSec; // recompute fixes contiguous start/end
+  }
+  m.scenes[idx] = cur;
+  m.scenes = recomputeTimings(m.scenes);
+  writeManifest(m);
+  return m.scenes;
+}
+
 // ── Audio ────────────────────────────────────────────────────────────────────
 
 export function audioDir(id: string) {
@@ -337,27 +405,26 @@ export function getAssetsState(id: string) {
   return readManifest(id).assets;
 }
 
-// Initialize one asset row per script scene (idempotent). Seeds keywords and the
-// image prompt from the current script so the inspector starts populated.
+// Keep one asset row per canonical scene (idempotent): add rows for new scenes,
+// prune rows for scenes that no longer exist. Keywords/prompt now live on the
+// scene (manifest.scenes), so asset rows only hold candidates + the selection.
 export function ensureSceneRows(id: string): Manifest['assets'] {
+  const scenes = getScenes(id); // may backfill + persist
   const m = readManifest(id);
-  const script = getCurrentScript(id);
-  const scenes = script?.scenes ?? [];
-  if (scenes.length === 0) return m.assets;
+  const nums = new Set(scenes.map((s, i) => s.scene ?? i + 1));
 
   const byNumber = new Map(m.assets.scenes.map((r) => [r.sceneNumber, r]));
   let changed = false;
   for (let i = 0; i < scenes.length; i++) {
-    const sc = scenes[i];
-    const num = sc.scene ?? i + 1;
+    const num = scenes[i].scene ?? i + 1;
     if (!byNumber.has(num)) {
-      byNumber.set(num, {
-        sceneNumber: num,
-        keywords: sc.searchKeywords ?? [],
-        imagePrompt: sc.imagePrompt ?? '',
-        candidates: [],
-        selected: null
-      });
+      byNumber.set(num, { sceneNumber: num, keywords: [], imagePrompt: '', candidates: [], selected: null });
+      changed = true;
+    }
+  }
+  for (const num of [...byNumber.keys()]) {
+    if (!nums.has(num)) {
+      byNumber.delete(num);
       changed = true;
     }
   }
@@ -460,6 +527,48 @@ export function deleteRender(id: string, rid: string): Manifest {
     setStage(m, 'video', m.renders.length ? 'in_progress' : 'not_started');
   }
   return writeManifest(m);
+}
+
+// ── Upload metadata ───────────────────────────────────────────────────────────
+
+export function getUpload(id: string) {
+  const m = readManifest(id);
+  const u = m.upload;
+  // One-time: an UNTOUCHED legacy 'private' default flips to the new 'public'
+  // default. Workspaces where the uploader was actually used keep their choice.
+  if (
+    u.visibility === 'private' &&
+    !u.title &&
+    !u.description &&
+    u.tags.length === 0 &&
+    u.youtube.status === 'idle'
+  ) {
+    m.upload.visibility = 'public';
+    writeManifest(m);
+    return m.upload;
+  }
+  return u;
+}
+
+export function setUpload(id: string, patch: Partial<Manifest['upload']>): Manifest['upload'] {
+  const m = readManifest(id);
+  m.upload = { ...m.upload, ...patch };
+  setStage(m, 'upload', 'in_progress');
+  writeManifest(m);
+  return m.upload;
+}
+
+export function setUploadYoutube(
+  id: string,
+  patch: Partial<Manifest['upload']['youtube']>
+): Manifest['upload']['youtube'] {
+  const m = readManifest(id);
+  m.upload.youtube = { ...m.upload.youtube, ...patch };
+  if (patch.status === 'completed') setStage(m, 'upload', 'completed');
+  else if (patch.status === 'uploading') setStage(m, 'upload', 'in_progress');
+  else if (patch.status === 'failed') setStage(m, 'upload', 'failed');
+  writeManifest(m);
+  return m.upload.youtube;
 }
 
 // ── Prompt templates (global) ────────────────────────────────────────────────

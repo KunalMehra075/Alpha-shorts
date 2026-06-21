@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Scene, VisualType } from '../schema';
-import type { ScriptInput } from './types';
+import type { BreakdownInput, ScriptInput, SeoInput } from './types';
 
 const LANG_LABEL: Record<string, string> = {
   en: 'English',
@@ -8,7 +8,7 @@ const LANG_LABEL: Record<string, string> = {
   bilingual: 'a natural mix of Hindi and English (Hinglish)'
 };
 
-// The strict JSON shape we ask every provider to return.
+// The strict JSON scene shape we ask the director to return.
 export const LlmScene = z.object({
   spokenLine: z.string().default(''),
   durationSec: z.coerce.number().optional(),
@@ -18,8 +18,11 @@ export const LlmScene = z.object({
   imagePrompt: z.string().default('')
 });
 
-export const LlmOutput = z.object({
-  voiceoverScript: z.string().default(''),
+export const WriterOutput = z.object({
+  voiceoverScript: z.string().default('')
+});
+
+export const DirectorOutput = z.object({
   scenes: z.array(LlmScene).default([])
 });
 
@@ -30,44 +33,29 @@ const DEFAULT_BRIEF =
   'interesting fact plus a discussion-worthy question.';
 
 /**
- * MASTER PROMPT.
- *
- * The system message owns the OUTPUT CONTRACT — the exact JSON structure for the
- * audio script + visual timeline, plus universal segmentation/visual rules.
- * Prompt templates are CREATIVE BRIEFS that extend this master prompt: they
- * govern tone, language, length and hook strategy, but never the output shape.
+ * WRITER PROMPT — produces ONLY the narration (voiceover) text. The visual
+ * breakdown is a separate "director" pass (see below), so the Script step stays
+ * independent of the Assets/timeline step.
  */
-export function buildMessages(input: ScriptInput) {
+export function buildWriterMessages(input: ScriptInput) {
   const lang = LANG_LABEL[input.language] || 'English';
 
-  const system = `You are an elite short-form video scriptwriter and director for a faceless facts channel. From a CREATIVE BRIEF and a TOPIC you produce two things together: (1) a spoken VOICEOVER SCRIPT and (2) a matching VISUAL TIMELINE.
+  const system = `You are an elite short-form video scriptwriter for a faceless facts channel. From a CREATIVE BRIEF and a TOPIC you write a single spoken VOICEOVER SCRIPT.
 
 You ALWAYS respond with a SINGLE valid JSON object and NOTHING else — no markdown, no code fences, no commentary.
 
 OUTPUT JSON — use exactly this shape:
 {
-  "voiceoverScript": "the complete narration as one flowing string",
-  "scenes": [
-    {
-      "spokenLine": "the exact words narrated during this scene",
-      "durationSec": 3,
-      "visualType": "Video" | "Image" | "Animation" | "SplitScreen",
-      "searchKeywords": ["3-5 short, highly searchable visual terms"],
-      "visualDescription": "one concise line describing what appears on screen",
-      "imagePrompt": "a detailed AI image-generation prompt; ultra-realistic, cinematic, 9:16 vertical"
-    }
-  ]
+  "voiceoverScript": "the complete narration as one flowing string"
 }
 
-UNIVERSAL RULES (always apply):
-- Break the FULL narration into consecutive scenes of 3-4 seconds each (durationSec between 2 and 4). Every spoken word belongs to exactly one scene, in order.
-- "voiceoverScript" MUST be exactly the concatenation of all "spokenLine" values, in order.
-- Visuals change every scene, stay highly dynamic, and directly support the narration. Prefer visuals easy to source (stock sites, documentaries, news footage, public domain) or generate. Avoid generic visuals.
-- Vary "visualType"; use close-ups, maps, satellite imagery, scientific visuals, motion graphics, historical/news footage, nature footage, and dramatic zooms where relevant.
-- "searchKeywords" must be concrete and visual. Stay factually accurate.
-- If the brief does not specify a length, target roughly ${Math.max(24, input.sceneCount * 3)}-45 seconds.
+RULES:
+- Write the complete narration as natural spoken sentences with natural pauses (commas, ellipses ...).
+- If the brief does not specify a length, target roughly ${Math.max(24, input.sceneCount * 3)}-45 seconds (~90-130 words).
+- Strong 3-second hook, keep the curiosity gap alive, end on the most interesting fact + a discussion-worthy question.
+- Stay 100% factually accurate. No on-screen directions, no scene labels — narration words only.
 
-LANGUAGE: if the CREATIVE BRIEF specifies a language, write "spokenLine"/"voiceoverScript" in that language; otherwise write in ${lang}. Always use that language's native script — for Hindi, write in Devanagari (e.g. "क्या आपको पता है") and never transliterate into Latin/English letters. Common English loanwords may stay in English.
+LANGUAGE: if the CREATIVE BRIEF specifies a language, write in that language; otherwise write in ${lang}. Always use that language's native script — for Hindi, write in Devanagari (e.g. "क्या आपको पता है") and never transliterate into Latin/English letters. Common English loanwords may stay in English.
 
 Respond with ONLY the JSON object.`;
 
@@ -81,10 +69,101 @@ Produce the JSON now.`;
   return { system, user };
 }
 
-// Parse a model's text response into validated scenes with sequential timings.
-export function parseScript(text: string): { voiceoverScript: string; scenes: Scene[] } {
-  const json = extractJson(text);
-  const out = LlmOutput.parse(json);
+/**
+ * DIRECTOR PROMPT — turns an EXISTING narration into a visual timeline. It must
+ * segment the given words VERBATIM (never rewrite/translate), so it works for
+ * AI scripts, hand-written scripts, and transcripts of uploaded audio alike.
+ */
+export function buildDirectorMessages(input: BreakdownInput) {
+  const system = `You are an elite short-form video DIRECTOR for a faceless facts channel. You are given a finished VOICEOVER SCRIPT and you plan a matching VISUAL TIMELINE.
+
+You ALWAYS respond with a SINGLE valid JSON object and NOTHING else — no markdown, no code fences, no commentary.
+
+OUTPUT JSON — use exactly this shape:
+{
+  "scenes": [
+    {
+      "spokenLine": "the exact words narrated during this scene",
+      "durationSec": 3,
+      "visualType": "Video" | "Image" | "Animation" | "SplitScreen",
+      "searchKeywords": ["3-5 short, highly searchable visual terms"],
+      "visualDescription": "one concise line describing what appears on screen",
+      "imagePrompt": "a detailed AI image-generation prompt; ultra-realistic, cinematic, 9:16 vertical"
+    }
+  ]
+}
+
+CRITICAL RULES:
+- Use the PROVIDED script VERBATIM. Split it into consecutive scenes; concatenating all "spokenLine" values in order MUST reproduce the original script exactly. Do NOT rewrite, translate, paraphrase, add, or drop any words. Keep the original language and script (e.g. Devanagari stays Devanagari).
+- Break it into scenes of ~3-4 seconds each (durationSec between 2 and 4); aim for about ${input.sceneCount} scenes total. Every word belongs to exactly one scene, in order.
+- Visuals change every scene and directly support that line. Vary "visualType"; prefer easy-to-source visuals. "searchKeywords" must be concrete, visual, and accurate.
+
+Respond with ONLY the JSON object.`;
+
+  const user = `VOICEOVER SCRIPT:
+${input.script.trim()}
+
+Produce the JSON timeline now.`;
+
+  return { system, user };
+}
+
+const LANG_LABEL2: Record<string, string> = {
+  en: 'English',
+  hi: 'Hindi (Devanagari script)',
+  bilingual: 'a natural mix of Hindi and English (Hinglish)'
+};
+
+export const SeoOutput = z.object({
+  titles: z.array(z.string()).default([]),
+  descriptions: z.array(z.string()).default([]),
+  tags: z.array(z.string()).default([])
+});
+
+/** SEO PROMPT — YouTube Shorts metadata from the topic + narration. */
+export function buildSeoMessages(input: SeoInput) {
+  const lang = LANG_LABEL2[input.language] || 'English';
+  const system = `You are a YouTube Shorts SEO expert. From a TOPIC and the video's SCRIPT you produce high-CTR metadata.
+
+You ALWAYS respond with a SINGLE valid JSON object and NOTHING else — no markdown, no commentary.
+
+OUTPUT JSON — exactly this shape:
+{
+  "titles": ["3 punchy, curiosity-driven titles, each <= 80 chars, may use 1 emoji"],
+  "descriptions": ["2 descriptions (2-4 sentences each) ending with relevant #hashtags incl. #shorts"],
+  "tags": ["10-15 short, lowercase, highly-searchable tags"]
+}
+
+RULES:
+- Write titles/descriptions in ${lang} (match the script's language). Tags can be a mix incl. English.
+- Accurate to the script; punchy; optimized for retention and search. Always include "shorts" in tags.
+
+Respond with ONLY the JSON object.`;
+  const user = `TOPIC: ${input.topic}\n\nSCRIPT:\n${input.script.trim().slice(0, 1500)}\n\nProduce the JSON now.`;
+  return { system, user };
+}
+
+export function parseSeo(text: string): { titles: string[]; descriptions: string[]; tags: string[] } {
+  const out = SeoOutput.parse(extractJson(text));
+  const clean = (a: string[]) => a.map((s) => s.trim()).filter(Boolean);
+  return {
+    titles: clean(out.titles).slice(0, 5),
+    descriptions: clean(out.descriptions).slice(0, 3),
+    tags: clean(out.tags).slice(0, 15)
+  };
+}
+
+// Parse a writer response into the narration string.
+export function parseNarration(text: string): { voiceoverScript: string } {
+  const out = WriterOutput.parse(extractJson(text));
+  const voiceoverScript = out.voiceoverScript.trim();
+  if (!voiceoverScript) throw new Error('Model returned an empty script.');
+  return { voiceoverScript };
+}
+
+// Parse a director response into validated scenes with sequential timings.
+export function parseBreakdown(text: string): { scenes: Scene[] } {
+  const out = DirectorOutput.parse(extractJson(text));
 
   let t = 0;
   const scenes: Scene[] = out.scenes.map((s, i) => {
@@ -104,11 +183,8 @@ export function parseScript(text: string): { voiceoverScript: string; scenes: Sc
     });
   });
 
-  const voiceoverScript =
-    out.voiceoverScript.trim() || scenes.map((s) => s.spokenLine).join(' ').trim();
-
   if (scenes.length === 0) throw new Error('Model returned no scenes.');
-  return { voiceoverScript, scenes };
+  return { scenes };
 }
 
 function normalizeVisualType(v?: string): z.infer<typeof VisualType> {

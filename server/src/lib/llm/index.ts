@@ -1,9 +1,25 @@
 import { DeepseekStrategy } from './deepseek';
 import { OpenAIStrategy } from './openai';
 import { MockStrategy } from './mock';
-import type { ScriptInput, ScriptResult, ScriptStrategy } from './types';
+import type {
+  BreakdownInput,
+  BreakdownResult,
+  ScriptInput,
+  ScriptResult,
+  ScriptStrategy,
+  SeoInput,
+  SeoResult
+} from './types';
 
-export type { ScriptInput, ScriptResult, ScriptStrategy } from './types';
+export type {
+  BreakdownInput,
+  BreakdownResult,
+  ScriptInput,
+  ScriptResult,
+  ScriptStrategy,
+  SeoInput,
+  SeoResult
+} from './types';
 
 /**
  * Context for the strategy pattern: holds an ordered list of script-generation
@@ -33,6 +49,40 @@ export class ScriptGenerator {
     }
     // MockStrategy is always available, so this is effectively unreachable.
     throw new Error(`All script strategies failed: ${attempts.join(' | ')}`);
+  }
+
+  async runBreakdown(
+    input: BreakdownInput
+  ): Promise<BreakdownResult & { mock: boolean; attempts: string[] }> {
+    const attempts: string[] = [];
+    for (const strategy of this.strategies) {
+      if (!strategy.isAvailable()) continue;
+      try {
+        const result = await strategy.breakdown(input);
+        return { ...result, mock: strategy.name === 'mock', attempts };
+      } catch (err: any) {
+        const msg = `${strategy.name}: ${err?.message ?? err}`;
+        attempts.push(msg);
+        console.warn(`[breakdown] ${msg} — falling back`);
+      }
+    }
+    throw new Error(`All breakdown strategies failed: ${attempts.join(' | ')}`);
+  }
+
+  async runSeo(input: SeoInput): Promise<SeoResult & { mock: boolean; attempts: string[] }> {
+    const attempts: string[] = [];
+    for (const strategy of this.strategies) {
+      if (!strategy.isAvailable()) continue;
+      try {
+        const result = await strategy.seo(input);
+        return { ...result, mock: strategy.name === 'mock', attempts };
+      } catch (err: any) {
+        const msg = `${strategy.name}: ${err?.message ?? err}`;
+        attempts.push(msg);
+        console.warn(`[seo] ${msg} — falling back`);
+      }
+    }
+    throw new Error(`All SEO strategies failed: ${attempts.join(' | ')}`);
   }
 }
 

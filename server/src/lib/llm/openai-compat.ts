@@ -1,5 +1,20 @@
-import { buildMessages, parseScript } from './prompt';
-import type { ScriptInput, ScriptResult, ScriptStrategy } from './types';
+import {
+  buildDirectorMessages,
+  buildSeoMessages,
+  buildWriterMessages,
+  parseBreakdown,
+  parseNarration,
+  parseSeo
+} from './prompt';
+import type {
+  BreakdownInput,
+  BreakdownResult,
+  ScriptInput,
+  ScriptResult,
+  ScriptStrategy,
+  SeoInput,
+  SeoResult
+} from './types';
 
 /**
  * Base strategy for any OpenAI-compatible Chat Completions API (OpenAI, DeepSeek,
@@ -18,11 +33,10 @@ export abstract class OpenAICompatStrategy implements ScriptStrategy {
     return !!this.apiKey();
   }
 
-  async generate(input: ScriptInput): Promise<ScriptResult> {
+  // Shared Chat Completions call returning the raw message content.
+  protected async chat(system: string, user: string): Promise<string> {
     const key = this.apiKey();
     if (!key) throw new Error(`${this.name}: API key not configured`);
-
-    const { system, user } = buildMessages(input);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -63,8 +77,24 @@ export abstract class OpenAICompatStrategy implements ScriptStrategy {
     const data: any = await res.json();
     const content: string = data?.choices?.[0]?.message?.content ?? '';
     if (!content.trim()) throw new Error(`${this.name}: empty response`);
+    return content;
+  }
 
-    const { voiceoverScript, scenes } = parseScript(content);
-    return { voiceoverScript, scenes, provider: this.name };
+  async generate(input: ScriptInput): Promise<ScriptResult> {
+    const { system, user } = buildWriterMessages(input);
+    const { voiceoverScript } = parseNarration(await this.chat(system, user));
+    return { voiceoverScript, provider: this.name };
+  }
+
+  async breakdown(input: BreakdownInput): Promise<BreakdownResult> {
+    const { system, user } = buildDirectorMessages(input);
+    const { scenes } = parseBreakdown(await this.chat(system, user));
+    return { scenes, provider: this.name };
+  }
+
+  async seo(input: SeoInput): Promise<SeoResult> {
+    const { system, user } = buildSeoMessages(input);
+    const out = parseSeo(await this.chat(system, user));
+    return { ...out, provider: this.name };
   }
 }

@@ -5,6 +5,7 @@ import {
   Copy,
   ExternalLink,
   Facebook,
+  Film,
   Globe,
   Instagram,
   Loader2,
@@ -26,12 +27,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { TabHeader } from '@/components/TabHeader';
-import { PhoneFrame } from '@/components/PhoneFrame';
 import { cn } from '@/lib/utils';
-import { useScript } from '@/lib/queries';
+import {
+  useGenerateSeo,
+  usePublishYoutube,
+  useRenders,
+  useSaveUpload,
+  useUpload,
+  useYoutubeStatus
+} from '@/lib/queries';
 import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
-import { mockSeo } from '@/lib/mockMedia';
-import { placeholderDataUri } from '@/lib/placeholder';
+import type { SeoSuggestions } from '@/lib/types';
 
 type Visibility = 'public' | 'unlisted' | 'private';
 
@@ -51,63 +57,95 @@ const VISIBILITY: { id: Visibility; label: string; icon: React.ComponentType<{ c
 
 export function UploadPage() {
   const { workspace, id } = useWorkspaceCtx();
-  const { data: script } = useScript(id);
-  const topic = script?.topic || workspace.name;
+  const saveUpload = useSaveUpload(id);
+  const genSeoMut = useGenerateSeo(id);
 
-  const [platform, setPlatform] = useState('youtube');
-  const [visibility, setVisibility] = useState<Visibility>('private');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
+  const [platform, setPlatform] = useState(workspace.upload.platform || 'youtube');
+  const [visibility, setVisibility] = useState<Visibility>(workspace.upload.visibility);
+  const [title, setTitle] = useState(workspace.upload.title);
+  const [description, setDescription] = useState(workspace.upload.description);
+  const [tags, setTags] = useState<string[]>(workspace.upload.tags);
   const [tagInput, setTagInput] = useState('');
-  const [seo, setSeo] = useState<ReturnType<typeof mockSeo> | null>(null);
-  const [generatingSeo, setGeneratingSeo] = useState(false);
+  const [seo, setSeo] = useState<SeoSuggestions | null>(null);
+  const [dirty, setDirty] = useState(false);
 
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Seed from the server's upload metadata once (reflects the public-default
+  // backfill for untouched workspaces).
+  const { data: upload } = useUpload(id);
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!upload || seededRef.current) return;
+    setPlatform(upload.platform);
+    setVisibility(upload.visibility);
+    setTitle(upload.title);
+    setDescription(upload.description);
+    setTags(upload.tags);
+    seededRef.current = true;
+  }, [upload]);
 
-  const thumb = placeholderDataUri(`${workspace.id}-final`, { ratio: '9:16', accent: true });
+  const { data: yt } = useYoutubeStatus(id);
+  const { data: renders = [] } = useRenders(id);
+  const publishMut = usePublishYoutube(id);
+  const completedRender = renders.find((r) => r.status === 'completed' && r.file) ?? null;
+  const hasRender = !!completedRender;
+  const configured = yt?.configured ?? false;
+  const renderUrl = completedRender
+    ? `/media/${id}/${completedRender.file}?v=${completedRender.sizeBytes}`
+    : null;
+
+  // Debounced persistence of the metadata to the manifest.
+  const saveRef = useRef(saveUpload);
+  saveRef.current = saveUpload;
+  useEffect(() => {
+    if (!dirty) return;
+    const h = setTimeout(() => {
+      saveRef.current.mutate({ platform, visibility, title, description, tags });
+      setDirty(false);
+    }, 800);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platform, visibility, title, description, tags, dirty]);
+  const markDirty = () => setDirty(true);
 
   const addTag = (t: string) => {
     const v = t.trim().replace(/,$/, '');
-    if (v && !tags.includes(v)) setTags((p) => [...p, v]);
+    if (v && !tags.includes(v)) {
+      setTags((p) => [...p, v]);
+      markDirty();
+    }
     setTagInput('');
   };
 
   const genSeo = async () => {
-    setGeneratingSeo(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setSeo(mockSeo(topic));
-    setGeneratingSeo(false);
-  };
-
-  const publish = () => {
-    if (!title.trim()) {
-      toast.error('Add a title first.');
-      return;
+    try {
+      const r = await genSeoMut.mutateAsync();
+      setSeo(r);
+      toast.success(r.mock ? 'SEO suggestions (mock fallback)' : `SEO via ${r.provider}`);
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
     }
-    setUploading(true);
-    setProgress(0);
-    setUploadedUrl(null);
-    timer.current = setInterval(() => {
-      setProgress((p) => {
-        const next = Math.min(100, p + 4);
-        if (next >= 100) {
-          if (timer.current) clearInterval(timer.current);
-          setUploading(false);
-          setUploadedUrl(`https://youtu.be/${workspace.id.slice(-6)}xZ`);
-          toast.success('Uploaded (preview)');
-        }
-        return next;
-      });
-    }, 90);
   };
 
-  useEffect(() => () => {
-    if (timer.current) clearInterval(timer.current);
-  }, []);
+  const publish = async () => {
+    if (!configured) {
+      return toast.error(
+        'YouTube is not connected — add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN to .env, then restart the server.'
+      );
+    }
+    if (!hasRender) return toast.error('Render a video in the Video Editor first.');
+    if (!title.trim()) return toast.error('Add a title first.');
+    // Flush any pending metadata edits so the upload uses the latest values.
+    if (dirty) {
+      saveUpload.mutate({ platform, visibility, title, description, tags });
+      setDirty(false);
+    }
+    try {
+      await publishMut.mutateAsync();
+      toast.success('Upload started');
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
 
   return (
     <div className="animate-fade-in">
@@ -116,11 +154,6 @@ export function UploadPage() {
         title="Video Uploader"
         description="Prepare SEO and publish your Short."
         status={workspace.stages.upload.status}
-        actions={
-          <Badge variant="outline" title="UI preview — wired to YouTube API in Phase 5">
-            preview
-          </Badge>
-        }
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_1fr]">
@@ -129,14 +162,21 @@ export function UploadPage() {
           <Card>
             <CardContent className="flex flex-col gap-3 p-5">
               <Label>Video preview</Label>
-              <PhoneFrame maxHeight={420}>
-                <img src={thumb} alt="" className="size-full object-cover" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="flex size-12 items-center justify-center rounded-full bg-black/55">
-                    <Play className="size-6 text-white" />
-                  </span>
+              {renderUrl ? (
+                <video
+                  key={renderUrl}
+                  src={renderUrl}
+                  controls
+                  playsInline
+                  className="mx-auto aspect-[9/16] w-full max-w-[280px] rounded-lg border border-border bg-black object-contain"
+                />
+              ) : (
+                <div className="mx-auto flex aspect-[9/16] w-full max-w-[280px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 p-4 text-center">
+                  <Film className="size-7 text-muted-foreground" />
+                  <p className="text-sm font-medium">No render yet</p>
+                  <p className="text-xs text-muted-foreground">Render a video in the Video Editor.</p>
                 </div>
-              </PhoneFrame>
+              )}
             </CardContent>
           </Card>
 
@@ -148,7 +188,10 @@ export function UploadPage() {
                   <button
                     key={p.id}
                     disabled={!p.available}
-                    onClick={() => setPlatform(p.id)}
+                    onClick={() => {
+                      setPlatform(p.id);
+                      markDirty();
+                    }}
                     className={cn(
                       'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
                       !p.available && 'cursor-not-allowed opacity-55',
@@ -185,7 +228,10 @@ export function UploadPage() {
                 {VISIBILITY.map((v) => (
                   <button
                     key={v.id}
-                    onClick={() => setVisibility(v.id)}
+                    onClick={() => {
+                      setVisibility(v.id);
+                      markDirty();
+                    }}
                     className={cn(
                       'flex items-center gap-3 rounded-lg border p-2.5 text-left transition-colors',
                       visibility === v.id ? 'border-accent/50 bg-accent/10' : 'border-border hover:bg-muted'
@@ -207,8 +253,8 @@ export function UploadPage() {
             <CardContent className="flex flex-col gap-4 p-5">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">SEO & metadata</h3>
-                <Button variant="secondary" size="sm" onClick={genSeo} disabled={generatingSeo}>
-                  {generatingSeo ? (
+                <Button variant="secondary" size="sm" onClick={genSeo} disabled={genSeoMut.isPending}>
+                  {genSeoMut.isPending ? (
                     <>
                       <Loader2 className="size-4 animate-spin" /> Generating…
                     </>
@@ -230,7 +276,10 @@ export function UploadPage() {
                   id="title"
                   maxLength={100}
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    markDirty();
+                  }}
                   placeholder="An attention-grabbing title…"
                 />
                 {seo && (
@@ -244,7 +293,10 @@ export function UploadPage() {
                 <Textarea
                   id="desc"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => {
+                    setDescription(e.target.value);
+                    markDirty();
+                  }}
                   className="min-h-[110px] text-sm"
                   placeholder="Describe your video…"
                 />
@@ -263,7 +315,12 @@ export function UploadPage() {
                       className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
                     >
                       {t}
-                      <button onClick={() => setTags((p) => p.filter((x) => x !== t))}>
+                      <button
+                        onClick={() => {
+                          setTags((p) => p.filter((x) => x !== t));
+                          markDirty();
+                        }}
+                      >
                         <X className="size-3" />
                       </button>
                     </span>
@@ -304,56 +361,85 @@ export function UploadPage() {
           {/* Publish */}
           <Card>
             <CardContent className="flex flex-col gap-4 p-5">
-              {uploadedUrl ? (
+              {yt?.status === 'completed' && yt.url ? (
                 <div className="flex flex-col items-center gap-3 py-2 text-center">
                   <CircleCheck className="size-10 text-accent" />
                   <div>
-                    <p className="text-base font-semibold">Upload complete</p>
-                    <p className="text-sm text-muted-foreground">
-                      Your Short is live ({visibility}).
-                    </p>
+                    <p className="text-base font-semibold">Published to YouTube</p>
+                    <p className="text-sm text-muted-foreground">Your Short is live ({visibility}).</p>
                   </div>
                   <div className="flex w-full max-w-md items-center gap-2 rounded-lg border border-border p-2">
-                    <span className="truncate px-2 text-sm">{uploadedUrl}</span>
+                    <span className="truncate px-2 text-sm">{yt.url}</span>
                     <Button
                       variant="ghost"
                       size="icon"
                       className="ml-auto size-8"
                       onClick={() => {
-                        navigator.clipboard?.writeText(uploadedUrl);
+                        navigator.clipboard?.writeText(yt.url!);
                         toast.success('Link copied');
                       }}
                     >
                       <Copy className="size-4" />
                     </Button>
                     <Button variant="ghost" size="icon" className="size-8" asChild>
-                      <a href={uploadedUrl} target="_blank" rel="noreferrer">
+                      <a href={yt.url} target="_blank" rel="noreferrer">
                         <ExternalLink className="size-4" />
                       </a>
                     </Button>
                   </div>
-                  <Button variant="secondary" size="sm" onClick={() => setUploadedUrl(null)}>
-                    Upload another
+                  <Button variant="secondary" size="sm" onClick={publish} disabled={publishMut.isPending}>
+                    Publish again
                   </Button>
                 </div>
-              ) : uploading ? (
+              ) : yt?.status === 'uploading' ? (
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">Uploading to YouTube…</span>
-                    <span className="text-muted-foreground">{progress}%</span>
+                    <span className="text-muted-foreground">{yt.progress}%</span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                     <div
                       className="h-full rounded-full bg-accent transition-[width]"
-                      style={{ width: `${progress}%` }}
+                      style={{ width: `${Math.max(3, yt.progress)}%` }}
                     />
                   </div>
                 </div>
               ) : (
-                <Button variant="primary" size="lg" className="w-full" onClick={publish}>
-                  <UploadIcon className="size-4" /> Publish to YouTube
-                </Button>
+                <>
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    className="w-full"
+                    onClick={publish}
+                    disabled={publishMut.isPending}
+                  >
+                    <UploadIcon className="size-4" /> Publish to YouTube
+                  </Button>
+                  {!configured && (
+                    <div className="flex flex-col items-center gap-1.5 rounded-lg border border-border bg-muted/30 p-3 text-center">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <Youtube className="size-4 text-muted-foreground" /> YouTube not connected
+                      </div>
+                      <p className="max-w-md text-xs text-muted-foreground">
+                        Add <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> and{' '}
+                        <code>GOOGLE_REFRESH_TOKEN</code> to the project <code>.env</code>, then restart
+                        the server.
+                      </p>
+                    </div>
+                  )}
+                  {configured && !hasRender && (
+                    <p className="text-center text-[11px] text-muted-foreground">
+                      Render a video in the Video Editor first — the latest render gets uploaded.
+                    </p>
+                  )}
+                  {yt?.status === 'failed' && yt.error && (
+                    <p className="text-center text-[11px] text-destructive">Last attempt failed: {yt.error}</p>
+                  )}
+                </>
               )}
+              <p className="text-center text-[11px] text-muted-foreground">
+                Uploads the latest completed render with the metadata above, at the chosen visibility.
+              </p>
             </CardContent>
           </Card>
         </div>

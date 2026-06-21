@@ -11,9 +11,9 @@ import {
   getAssetsState,
   getAudioState,
   getCaptions,
-  getCurrentScript,
   getMusic,
   getRenders,
+  getScenes,
   musicDir,
   rendersDir,
   setWorkspaceMusic,
@@ -122,9 +122,8 @@ export function clearMusic(opts: { id: string }) {
 // Build the Remotion composition inputProps from the user's manifest choices +
 // the editor timeline. Stages all referenced files into remotion/public/assets.
 function buildInputProps(id: string, timeline: RenderTimeline) {
-  const script = getCurrentScript(id);
-  const scenes = script?.scenes ?? [];
-  if (!scenes.length) throw new HttpError(400, 'No script scenes to render.');
+  const scenes = getScenes(id);
+  if (!scenes.length) throw new HttpError(400, 'No scenes to render — build the scene breakdown in the Assets step first.');
 
   const assets = getAssetsState(id);
   const caps = getCaptions(id);
@@ -223,8 +222,9 @@ const key = (id: string, rid: string) => `${id}:${rid}`;
 
 export function startRender(id: string, timeline: RenderTimeline): RenderRecord {
   if (busy) throw new HttpError(409, 'A render is already in progress. Please wait for it to finish.');
-  const script = getCurrentScript(id);
-  if (!script?.scenes?.length) throw new HttpError(400, 'No script scenes to render.');
+  if (!getScenes(id).length) {
+    throw new HttpError(400, 'No scenes to render — build the scene breakdown in the Assets step first.');
+  }
 
   const rid = shortId();
   const rec: RenderRecord = {
