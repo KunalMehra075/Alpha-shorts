@@ -10,7 +10,9 @@ import {
   saveSceneMeta,
   searchScene,
   selectScene,
+  selectSceneFromGlobal,
   selectSceneFromLibrary,
+  setSceneTrim,
   uploadScene
 } from '../lib/assets';
 
@@ -31,6 +33,7 @@ const SaveBody = z.object({
 });
 const SelectBody = z.object({ ref: AssetRef });
 const SelectLibraryBody = z.object({ itemId: z.string().min(1) });
+const TrimBody = z.object({ trimStartSec: z.number().min(0), trimEndSec: z.number().min(0.5) });
 
 // GET current assets state (scene rows initialized from the script).
 assetsRouter.get(
@@ -65,6 +68,31 @@ assetsRouter.post(
   ah(async (req, res) => {
     const body = SelectLibraryBody.parse(req.body);
     res.json(await selectSceneFromLibrary({ id: pid(req), sceneNumber: sceneNum(req), itemId: body.itemId }));
+  })
+);
+
+// POST select a GLOBAL media-library image/video for a scene.
+assetsRouter.post(
+  '/:scene/select-global',
+  ah(async (req, res) => {
+    const body = SelectLibraryBody.parse(req.body);
+    res.json(await selectSceneFromGlobal({ id: pid(req), sceneNumber: sceneNum(req), itemId: body.itemId }));
+  })
+);
+
+// PUT set the video trim window on a scene's selected asset (syncs duration).
+assetsRouter.put(
+  '/:scene/trim',
+  ah(async (req, res) => {
+    const body = TrimBody.parse(req.body);
+    res.json(
+      await setSceneTrim({
+        id: pid(req),
+        sceneNumber: sceneNum(req),
+        trimStartSec: body.trimStartSec,
+        trimEndSec: body.trimEndSec
+      })
+    );
   })
 );
 

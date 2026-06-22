@@ -7,9 +7,11 @@ import {
   Facebook,
   Film,
   Globe,
+  Image as ImageIcon,
   Instagram,
   Loader2,
   Lock,
+  Pencil,
   Play,
   Plus,
   Sparkles,
@@ -23,21 +25,35 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { TabHeader } from '@/components/TabHeader';
-import { cn } from '@/lib/utils';
+import { cn, libraryUrl } from '@/lib/utils';
 import {
   useGenerateSeo,
+  useLibrary,
+  useMediaLibrary,
   usePublishYoutube,
   useRenders,
   useSaveUpload,
+  useThumbnailFromAsset,
+  useThumbnailFromFrame,
   useUpload,
+  useUploadThumbnail,
   useYoutubeStatus
 } from '@/lib/queries';
 import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
-import type { SeoSuggestions } from '@/lib/types';
+import type { LibraryItem, MediaItem, SeoSuggestions } from '@/lib/types';
 
 type Visibility = 'public' | 'unlisted' | 'private';
 
@@ -68,6 +84,8 @@ export function UploadPage() {
   const [tagInput, setTagInput] = useState('');
   const [seo, setSeo] = useState<SeoSuggestions | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [showThumb, setShowThumb] = useState(true);
+  const [thumbOpen, setThumbOpen] = useState(false);
 
   // Seed from the server's upload metadata once (reflects the public-default
   // backfill for untouched workspaces).
@@ -92,6 +110,23 @@ export function UploadPage() {
   const renderUrl = completedRender
     ? `/media/${id}/${completedRender.file}?v=${completedRender.sizeBytes}`
     : null;
+  const thumb = upload?.thumbnail ?? null;
+  const thumbUrl = thumb?.file ? `/media/${id}/${thumb.file}?v=${thumb.sizeBytes}` : null;
+  const frameThumb = useThumbnailFromFrame(id);
+
+  // Auto-default: when there's a render but no thumbnail yet, grab a random
+  // frame from the video and use it. Runs once per mount; failures are silent
+  // (e.g. ffmpeg missing) so we don't spam.
+  const frameTriedRef = useRef(false);
+  useEffect(() => {
+    if (!upload) return; // wait for server state so we don't double-fire
+    if (frameTriedRef.current) return;
+    if (thumb?.file) return;
+    if (!hasRender) return;
+    frameTriedRef.current = true;
+    frameThumb.mutate(undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upload, thumb?.file, hasRender]);
 
   // Debounced persistence of the metadata to the manifest.
   const saveRef = useRef(saveUpload);
@@ -161,8 +196,69 @@ export function UploadPage() {
         <div className="flex flex-col gap-5">
           <Card>
             <CardContent className="flex flex-col gap-3 p-5">
-              <Label>Video preview</Label>
-              {renderUrl ? (
+              <div className="flex items-center justify-between">
+                <Label>{showThumb ? 'Thumbnail' : 'Video preview'}</Label>
+                <button
+                  type="button"
+                  onClick={() => setShowThumb((s) => !s)}
+                  aria-pressed={showThumb}
+                  className={cn(
+                    'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                    showThumb
+                      ? 'border-accent/60 bg-accent/15 text-accent'
+                      : 'border-border text-muted-foreground hover:bg-muted'
+                  )}
+                >
+                  {showThumb ? 'video' : 'thumbnail'}
+                </button>
+              </div>
+
+              {showThumb ? (
+                thumbUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => setThumbOpen(true)}
+                    title="Change thumbnail"
+                    className="group relative mx-auto block aspect-[9/16] w-full max-w-[280px] overflow-hidden rounded-lg border border-border bg-black"
+                  >
+                    <img
+                      key={thumbUrl}
+                      src={thumbUrl}
+                      alt="Thumbnail"
+                      className="size-full object-contain"
+                    />
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
+                      <span className="flex size-12 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/40 backdrop-blur-sm">
+                        <Pencil className="size-5 text-white" />
+                      </span>
+                    </span>
+                  </button>
+                ) : frameThumb.isPending ? (
+                  <div className="mx-auto flex aspect-[9/16] w-full max-w-[280px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 p-4 text-center">
+                    <Loader2 className="size-7 animate-spin text-muted-foreground" />
+                    <p className="text-sm font-medium">Generating thumbnail…</p>
+                    <p className="text-xs text-muted-foreground">Grabbing a frame from your video.</p>
+                  </div>
+                ) : hasRender ? (
+                  <button
+                    type="button"
+                    onClick={() => setThumbOpen(true)}
+                    className="group mx-auto flex aspect-[9/16] w-full max-w-[280px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 p-4 text-center transition hover:bg-muted/50"
+                  >
+                    <span className="flex size-11 items-center justify-center rounded-full bg-muted">
+                      <Pencil className="size-5 text-muted-foreground" />
+                    </span>
+                    <p className="text-sm font-medium">Add a thumbnail</p>
+                    <p className="text-xs text-muted-foreground">Click to choose or import one.</p>
+                  </button>
+                ) : (
+                  <div className="mx-auto flex aspect-[9/16] w-full max-w-[280px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 p-4 text-center">
+                    <ImageIcon className="size-7 text-muted-foreground" />
+                    <p className="text-sm font-medium">No thumbnail</p>
+                    <p className="text-xs text-muted-foreground">Render a video first to set one.</p>
+                  </div>
+                )
+              ) : renderUrl ? (
                 <video
                   key={renderUrl}
                   src={renderUrl}
@@ -283,7 +379,13 @@ export function UploadPage() {
                   placeholder="An attention-grabbing title…"
                 />
                 {seo && (
-                  <Suggestions items={seo.titles} onPick={(t) => setTitle(t)} />
+                  <Suggestions
+                  items={seo.titles}
+                  onPick={(t) => {
+                    setTitle(t);
+                    markDirty();
+                  }}
+                />
                 )}
               </div>
 
@@ -301,7 +403,14 @@ export function UploadPage() {
                   placeholder="Describe your video…"
                 />
                 {seo && (
-                  <Suggestions items={seo.descriptions} onPick={(d) => setDescription(d)} truncate />
+                  <Suggestions
+                  items={seo.descriptions}
+                  onPick={(d) => {
+                    setDescription(d);
+                    markDirty();
+                  }}
+                  truncate
+                />
                 )}
               </div>
 
@@ -368,6 +477,11 @@ export function UploadPage() {
                     <p className="text-base font-semibold">Published to YouTube</p>
                     <p className="text-sm text-muted-foreground">Your Short is live ({visibility}).</p>
                   </div>
+                  {yt.thumbnailWarning && (
+                    <p className="max-w-md rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
+                      Video published, but the custom thumbnail wasn’t applied: {yt.thumbnailWarning}
+                    </p>
+                  )}
                   <div className="flex w-full max-w-md items-center gap-2 rounded-lg border border-border p-2">
                     <span className="truncate px-2 text-sm">{yt.url}</span>
                     <Button
@@ -387,9 +501,6 @@ export function UploadPage() {
                       </a>
                     </Button>
                   </div>
-                  <Button variant="secondary" size="sm" onClick={publish} disabled={publishMut.isPending}>
-                    Publish again
-                  </Button>
                 </div>
               ) : yt?.status === 'uploading' ? (
                 <div className="flex flex-col gap-2">
@@ -444,7 +555,275 @@ export function UploadPage() {
           </Card>
         </div>
       </div>
+
+      {thumbOpen && (
+        <ThumbnailPicker
+          id={id}
+          renderUrl={renderUrl}
+          onClose={() => setThumbOpen(false)}
+          onPicked={() => setShowThumb(true)}
+        />
+      )}
     </div>
+  );
+}
+
+function ThumbnailPicker({
+  id,
+  renderUrl,
+  onClose,
+  onPicked
+}: {
+  id: string;
+  renderUrl: string | null;
+  onClose: () => void;
+  onPicked: () => void;
+}) {
+  const { data: library } = useLibrary(id);
+  const { data: gImages } = useMediaLibrary('image');
+  const fromAsset = useThumbnailFromAsset(id);
+  const uploadThumb = useUploadThumbnail(id);
+  const frameThumb = useThumbnailFromFrame(id);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState('');
+
+  // "Choose frame" tab: scrub the rendered video and grab the shown frame.
+  const frameVideoRef = useRef<HTMLVideoElement>(null);
+  const [frameDur, setFrameDur] = useState(0);
+  const [frameAt, setFrameAt] = useState(0);
+
+  const seekFrame = (t: number) => {
+    setFrameAt(t);
+    const v = frameVideoRef.current;
+    if (v && isFinite(v.duration)) v.currentTime = Math.min(t, Math.max(0, v.duration - 0.05));
+  };
+
+  const useFrame = async () => {
+    try {
+      await frameThumb.mutateAsync(frameAt);
+      toast.success('Thumbnail set from frame');
+      onPicked();
+      onClose();
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+
+  const wsImages = (library ?? []).filter((m) => m.kind === 'image');
+  const q = search.trim().toLowerCase();
+  const filtWs = wsImages.filter((m) => !q || m.name.toLowerCase().includes(q));
+  const filtGlobal = (gImages ?? []).filter((m) => !q || m.name.toLowerCase().includes(q));
+  const busy = fromAsset.isPending || uploadThumb.isPending;
+
+  const pickAsset = async (source: 'library' | 'global', itemId: string) => {
+    try {
+      await fromAsset.mutateAsync({ source, itemId });
+      toast.success('Thumbnail set');
+      onPicked();
+      onClose();
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+
+  const onFile = async (file?: File) => {
+    if (!file) return;
+    try {
+      await uploadThumb.mutateAsync(file);
+      toast.success('Thumbnail set');
+      onPicked();
+      onClose();
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+
+  const Grid = ({
+    items,
+    src,
+    onPick,
+    empty
+  }: {
+    items: (LibraryItem | MediaItem)[];
+    src: (m: LibraryItem | MediaItem) => string;
+    onPick: (m: LibraryItem | MediaItem) => void;
+    empty: string;
+  }) =>
+    items.length === 0 ? (
+      <p className="py-10 text-center text-sm text-muted-foreground">{empty}</p>
+    ) : (
+      <div className="grid max-h-[44vh] grid-cols-3 gap-2 overflow-y-auto p-0.5 sm:grid-cols-4">
+        {items.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => onPick(m)}
+            disabled={busy}
+            title={`${m.name} — use as thumbnail`}
+            className="group relative aspect-video overflow-hidden rounded-lg ring-1 ring-border transition hover:ring-2 hover:ring-accent disabled:opacity-60"
+          >
+            <img src={src(m)} alt="" className="size-full object-cover" loading="lazy" />
+          </button>
+        ))}
+      </div>
+    );
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Change thumbnail</DialogTitle>
+          <DialogDescription>
+            Pick an image from your assets, generate one, or import from your computer. JPG/PNG,
+            up to 2 MB (1280×720 recommended).
+          </DialogDescription>
+        </DialogHeader>
+
+        <Tabs defaultValue={renderUrl ? 'frame' : 'asset'} className="mt-1">
+          <TabsList>
+            <TabsTrigger value="frame">Choose frame</TabsTrigger>
+            <TabsTrigger value="asset">From asset</TabsTrigger>
+            <TabsTrigger value="ai">Generate with AI</TabsTrigger>
+            <TabsTrigger value="import">Import</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="frame" className="flex flex-col gap-3">
+            {!renderUrl ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                Render a video in the Video Editor first to choose a frame.
+              </p>
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <video
+                  ref={frameVideoRef}
+                  src={renderUrl}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  onLoadedMetadata={(e) => {
+                    const d = e.currentTarget.duration;
+                    if (isFinite(d)) {
+                      setFrameDur(d);
+                      // Start at ~10% in (skip intro fade), mirroring the auto-default.
+                      seekFrame(Math.min(d * 0.1, Math.max(0, d - 0.05)));
+                    }
+                  }}
+                  className="aspect-[9/16] max-h-[44vh] rounded-lg border border-border bg-black object-contain"
+                />
+                <div className="w-full max-w-sm">
+                  <input
+                    type="range"
+                    min={0}
+                    max={frameDur || 0}
+                    step={0.05}
+                    value={frameAt}
+                    onChange={(e) => seekFrame(Number(e.target.value))}
+                    className="w-full accent-[hsl(var(--accent))]"
+                  />
+                  <div className="mt-1 flex justify-between text-[11px] tabular-nums text-muted-foreground">
+                    <span>{frameAt.toFixed(1)}s</span>
+                    <span>{frameDur ? `${frameDur.toFixed(1)}s` : '—'}</span>
+                  </div>
+                </div>
+                <Button variant="primary" size="sm" disabled={frameThumb.isPending} onClick={useFrame}>
+                  {frameThumb.isPending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" /> Setting…
+                    </>
+                  ) : (
+                    <>
+                      <ImageIcon className="size-4" /> Use this frame
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="asset" className="flex flex-col gap-3">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search images…"
+              className="h-9"
+            />
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Workspace library ({filtWs.length})
+              </p>
+              <Grid
+                items={filtWs}
+                src={(m) => `/media/${id}/${m.file}`}
+                onPick={(m) => pickAsset('library', m.id)}
+                empty="No images in this workspace’s library."
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Global library ({filtGlobal.length})
+              </p>
+              <Grid
+                items={filtGlobal}
+                src={(m) => libraryUrl(m.file)}
+                onPick={(m) => pickAsset('global', m.id)}
+                empty="No global images — add some on the Assets page."
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="ai">
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 py-12 text-center">
+              <Sparkles className="size-7 text-muted-foreground" />
+              <p className="text-sm font-medium">AI thumbnail generation</p>
+              <p className="max-w-sm text-xs text-muted-foreground">
+                Coming soon — you’ll be able to generate a thumbnail from a prompt seeded by your
+                video title.
+              </p>
+              <Button variant="secondary" size="sm" disabled className="mt-1">
+                Generate (coming soon)
+              </Button>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="import">
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 py-12 text-center">
+              <UploadIcon className="size-7 text-muted-foreground" />
+              <p className="text-sm font-medium">Import from your computer</p>
+              <p className="max-w-sm text-xs text-muted-foreground">JPG or PNG, up to 2 MB.</p>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png"
+                className="hidden"
+                onChange={(e) => onFile(e.target.files?.[0] ?? undefined)}
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+                className="mt-1"
+              >
+                {uploadThumb.isPending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Uploading…
+                  </>
+                ) : (
+                  <>
+                    <UploadIcon className="size-4" /> Choose file
+                  </>
+                )}
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

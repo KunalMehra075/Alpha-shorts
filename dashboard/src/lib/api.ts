@@ -1,4 +1,13 @@
 import type {
+  AnalyticsOverview,
+  AnalyticsRange,
+  AnalyticsStatus,
+  AnalyticsSeriesPoint,
+  OauthResult,
+  TopVideos,
+  VideoAnalyticsRow,
+  WithReauth,
+  WorkspaceAnalytics,
   AssetRef,
   AssetsState,
   AudioState,
@@ -172,6 +181,11 @@ export const api = {
   },
   deleteLibrary: (id: string, itemId: string) =>
     request<LibraryItem[]>(`/workspaces/${id}/library/${itemId}`, { method: 'DELETE' }),
+  libraryFromGlobal: (id: string, itemId: string) =>
+    request<LibraryItem>(`/workspaces/${id}/library/from-global`, {
+      method: 'POST',
+      body: JSON.stringify({ itemId })
+    }),
   selectSceneFromLibrary: (id: string, sceneNumber: number, itemId: string) =>
     request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/select-library`, {
       method: 'POST',
@@ -179,6 +193,11 @@ export const api = {
     }),
   musicFromLibrary: (id: string, itemId: string) =>
     request<MusicTrack>(`/workspaces/${id}/video/music/from-library`, {
+      method: 'POST',
+      body: JSON.stringify({ itemId })
+    }),
+  musicFromGlobal: (id: string, itemId: string) =>
+    request<MusicTrack>(`/workspaces/${id}/video/music/from-global`, {
       method: 'POST',
       body: JSON.stringify({ itemId })
     }),
@@ -247,6 +266,27 @@ export const api = {
     request<Scene[]>(`/workspaces/${id}/scenes/${sceneNumber}`, {
       method: 'PUT',
       body: JSON.stringify(patch)
+    }),
+  addSceneFromMedia: (
+    id: string,
+    payload: {
+      source: 'library' | 'global';
+      itemId: string;
+      durationSec?: number;
+      trimStartSec?: number;
+      trimEndSec?: number;
+    }
+  ) =>
+    request<{ scenes: Scene[]; assets: AssetsState }>(`/workspaces/${id}/scenes/from-media`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
+  removeScene: (id: string, sceneNumber: number) =>
+    request<Scene[]>(`/workspaces/${id}/scenes/${sceneNumber}`, { method: 'DELETE' }),
+  trimSceneAsset: (id: string, sceneNumber: number, trimStartSec: number, trimEndSec: number) =>
+    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/trim`, {
+      method: 'PUT',
+      body: JSON.stringify({ trimStartSec, trimEndSec })
     }),
 
   // assets
@@ -335,6 +375,59 @@ export const api = {
   getYoutubeStatus: (id: string) => request<YoutubeStatus>(`/workspaces/${id}/upload/youtube`),
   publishYoutube: (id: string) =>
     request<YoutubeState>(`/workspaces/${id}/upload/publish`, { method: 'POST' }),
+
+  // thumbnail
+  uploadThumbnail: async (id: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/workspaces/${id}/upload/thumbnail`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const b = await res.json();
+        if (b?.error) msg = b.error;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.json() as Promise<UploadMeta>;
+  },
+  thumbnailFromAsset: (id: string, source: 'library' | 'global', itemId: string) =>
+    request<UploadMeta>(`/workspaces/${id}/upload/thumbnail/from-asset`, {
+      method: 'POST',
+      body: JSON.stringify({ source, itemId })
+    }),
+  thumbnailFromFrame: (id: string, atSec?: number) =>
+    request<UploadMeta>(`/workspaces/${id}/upload/thumbnail/from-frame`, {
+      method: 'POST',
+      body: JSON.stringify(atSec == null ? {} : { atSec })
+    }),
+  removeThumbnail: (id: string) =>
+    request<UploadMeta>(`/workspaces/${id}/upload/thumbnail`, { method: 'DELETE' }),
+
+  // analytics
+  analyticsStatus: () => request<AnalyticsStatus>(`/analytics/status`),
+  analyticsOverview: (range: AnalyticsRange) =>
+    request<WithReauth<AnalyticsOverview>>(`/analytics/overview?range=${range}`),
+  analyticsTimeseries: (range: AnalyticsRange) =>
+    request<WithReauth<{ range: AnalyticsRange; fetchedAt: string; series: AnalyticsSeriesPoint[] }>>(
+      `/analytics/timeseries?range=${range}`
+    ),
+  analyticsVideos: (range: AnalyticsRange, sort?: string, search?: string) => {
+    const qs = new URLSearchParams({ range });
+    if (sort) qs.set('sort', sort);
+    if (search) qs.set('search', search);
+    return request<WithReauth<{ range: AnalyticsRange; fetchedAt: string; videos: VideoAnalyticsRow[] }>>(
+      `/analytics/videos?${qs.toString()}`
+    );
+  },
+  analyticsTop: (range: AnalyticsRange) =>
+    request<WithReauth<TopVideos>>(`/analytics/top?range=${range}`),
+  analyticsRefresh: () => request<{ ok: boolean }>(`/analytics/refresh`, { method: 'POST' }),
+  analyticsOauthResult: () => request<OauthResult>(`/analytics/oauth/result`),
+  workspaceAnalytics: (id: string) =>
+    request<WithReauth<WorkspaceAnalytics>>(`/workspaces/${id}/analytics`),
 
   // templates
   listTemplates: () => request<PromptTemplate[]>('/prompt-templates'),

@@ -13,6 +13,7 @@ import { CaptionPage } from '@/pages/CaptionPage';
 import { AssetPage } from '@/pages/AssetPage';
 import { VideoEditorPage } from '@/pages/VideoEditorPage';
 import { UploadPage } from '@/pages/UploadPage';
+import { WorkspaceAnalyticsPage } from '@/pages/WorkspaceAnalyticsPage';
 
 export const router = createBrowserRouter([
   {
@@ -37,7 +38,8 @@ export const router = createBrowserRouter([
           { path: 'caption', element: <CaptionPage /> },
           { path: 'assets', element: <AssetPage /> },
           { path: 'video', element: <VideoEditorPage /> },
-          { path: 'upload', element: <UploadPage /> }
+          { path: 'upload', element: <UploadPage /> },
+          { path: 'analytics', element: <WorkspaceAnalyticsPage /> }
         ]
       },
       { path: '*', element: <Navigate to="/" replace /> }

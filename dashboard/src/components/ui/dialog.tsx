@@ -32,7 +32,8 @@ export const DialogContent = React.forwardRef<
 DialogContent.displayName = 'DialogContent';
 
 export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col gap-1.5', className)} {...props} />;
+  // min-w-0 so long titles can truncate/wrap instead of widening the grid dialog.
+  return <div className={cn('flex min-w-0 flex-col gap-1.5 pr-6', className)} {...props} />;
 }
 
 export function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

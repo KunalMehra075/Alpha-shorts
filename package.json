@@ -22,7 +22,7 @@
     "doctor": "node src/doctor.js",
     "cleanup": "node src/cleanup.js",
     "dash": "concurrently -n server,web -c red,gray \"npm:dash:server\" \"npm:dash:web\"",
-    "dash:server": "npm --prefix server start",
+    "dash:server": "npm --prefix server run dev",
     "dash:web": "npm --prefix dashboard run dev",
     "dash:install": "npm --prefix server install && npm --prefix dashboard install",
     "dash:build": "npm --prefix dashboard run build"

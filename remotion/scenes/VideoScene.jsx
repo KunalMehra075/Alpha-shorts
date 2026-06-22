@@ -40,12 +40,23 @@ export const VideoScene = ({ asset, effect = 'zoom-in', durationInFrames, seed }
       break;
   }
 
+  // Optional trim window (frame offsets into the source). When present we play
+  // exactly that slice; otherwise loop a short clip to fill the scene.
+  const hasTrim =
+    Number.isFinite(asset.trimStartFrames) || Number.isFinite(asset.trimEndFrames);
+  const trimProps = hasTrim
+    ? {
+        startFrom: Math.max(0, Math.round(asset.trimStartFrames || 0)),
+        ...(Number.isFinite(asset.trimEndFrames) ? { endAt: Math.round(asset.trimEndFrames) } : {})
+      }
+    : { loop: true };
+
   return (
     <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
       <OffthreadVideo
         src={staticFile(asset.src)}
         muted
-        loop
+        {...trimProps}
         style={{
           width: '100%',
           height: '100%',

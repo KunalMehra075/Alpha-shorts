@@ -1,5 +1,6 @@
-import { Outlet, useNavigate, useOutletContext, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronsUpDown, Loader2 } from 'lucide-react';
+import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { BarChart3, ChevronLeft, ChevronsUpDown, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -85,6 +86,20 @@ export function WorkspaceLayout() {
         </DropdownMenu>
 
         <Badge variant="outline">{langLabel}</Badge>
+
+        <NavLink
+          to={`/w/${workspace.id}/analytics`}
+          className={({ isActive }) =>
+            cn(
+              'ml-auto inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors',
+              isActive
+                ? 'border-accent/50 bg-accent/10 text-foreground'
+                : 'border-border text-muted-foreground hover:bg-muted'
+            )
+          }
+        >
+          <BarChart3 className="size-4" /> Analytics
+        </NavLink>
       </header>
 
       {/* Stepper */}

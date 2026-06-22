@@ -33,6 +33,13 @@
     --red-top: 0 90% 62%;
     --red-mid: 0 86% 50%;
     --red-bot: 0 88% 40%;
+
+    /* analytics chart palette */
+    --chart-1: 0 84% 52%;
+    --chart-2: 217 91% 60%;
+    --chart-3: 142 71% 45%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 271 81% 56%;
   }
 
   .dark {
@@ -56,6 +63,13 @@
     --red-top: 0 90% 64%;
     --red-mid: 0 85% 52%;
     --red-bot: 0 88% 42%;
+
+    /* analytics chart palette (dark) */
+    --chart-1: 0 84% 60%;
+    --chart-2: 217 91% 65%;
+    --chart-3: 142 69% 52%;
+    --chart-4: 38 92% 58%;
+    --chart-5: 271 81% 66%;
   }
 
   * {

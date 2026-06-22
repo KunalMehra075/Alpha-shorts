@@ -27,13 +27,15 @@ import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TabHeader } from '@/components/TabHeader';
 import { TransitionIcon } from '@/components/TransitionIcon';
-import { cn, relativeTime } from '@/lib/utils';
+import { cn, libraryUrl, relativeTime } from '@/lib/utils';
 import {
   useAssets,
   useCaptions,
   useDeleteMusic,
   useDeleteRender,
   useLibrary,
+  useMediaLibrary,
+  useMusicFromGlobal,
   useMusicFromLibrary,
   usePlaceSound,
   useRemovePlacement,
@@ -63,6 +65,8 @@ type Clip = {
   spokenLine: string;
   visualType: VisualType;
   thumb: string;
+  videoSrc?: string; // set when the selected asset is a workspace video file
+  trimStartSec: number; // where the trimmed segment starts in the source video
   hasAsset: boolean;
   effect: string;
   transition: Transition;
@@ -100,17 +104,21 @@ export function VideoEditorPage() {
     return scenes.map((s: Scene, i) => {
       const ts = editor.timeline.scenes[i];
       const asset = assetRows.find((r) => r.sceneNumber === (s.scene ?? i + 1))?.selected ?? null;
+      const isVideoFile = !!(asset?.file && asset.kind === 'video');
       const assetThumb =
         asset?.thumbUrl ||
         (asset?.file && asset.kind === 'image'
           ? `/media/${id}/${asset.file}?v=${asset.sizeBytes}`
           : null);
+      const videoSrc = isVideoFile ? `/media/${id}/${asset!.file}?v=${asset!.sizeBytes}` : undefined;
       const durationSec = ts?.durationSec ?? Math.max(0.5, s.end - s.start);
       const clip: Clip = {
         index: i,
         spokenLine: s.spokenLine,
         visualType: s.visualType,
         thumb: assetThumb ?? placeholderDataUri(`${id}-scene-${i}`, { ratio: '9:16' }),
+        videoSrc,
+        trimStartSec: asset?.trimStartSec ?? 0,
         hasAsset: !!asset,
         effect: ts?.effect ?? effectsFor(s.visualType)[0],
         transition: ts?.transition ?? 'Fade',
@@ -130,9 +138,15 @@ export function VideoEditorPage() {
   const uploadMusic = useUploadMusic(id);
   const deleteMusic = useDeleteMusic(id);
   const musicFromLib = useMusicFromLibrary(id);
+  const musicFromGlobal = useMusicFromGlobal(id);
   const { data: libraryData } = useLibrary(id);
   const audioLibrary = (libraryData ?? []).filter((i) => i.kind === 'audio');
+  const { data: globalMusicData } = useMediaLibrary('audio');
+  const globalMusic = globalMusicData ?? [];
   const [musicPickerOpen, setMusicPickerOpen] = useState(false);
+  const [musicSearch, setMusicSearch] = useState('');
+  const [musicPreviewId, setMusicPreviewId] = useState<string | null>(null);
+  const musicPreviewRef = useRef<HTMLAudioElement>(null);
 
   // Sound effects: global library (palette) + per-video placements.
   const toggleSounds = useEditorStore((s) => s.toggleSounds);
@@ -349,7 +363,7 @@ export function VideoEditorPage() {
                           onClick={() => setMusicPickerOpen(true)}
                           className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
                         >
-                          <LibraryIcon className="size-4" /> Add from Asset
+                          <LibraryIcon className="size-4" /> Browse music
                         </button>
                       </div>
                     )}
@@ -475,11 +489,16 @@ export function VideoEditorPage() {
                       : "border-border hover:opacity-90",
                   )}
                 >
-                  <img
-                    src={c.thumb}
-                    alt=""
-                    className="size-full object-cover"
-                  />
+                  {c.videoSrc ? (
+                    <video
+                      src={c.videoSrc}
+                      muted
+                      preload="metadata"
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <img src={c.thumb} alt="" className="size-full object-cover" />
+                  )}
                   <span className="absolute left-1.5 top-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[10px] font-bold text-white">
                     {c.index + 1}
                   </span>
@@ -550,43 +569,128 @@ export function VideoEditorPage() {
         onProceed={() => navigate(`/w/${id}/upload`)}
       />
 
-      <Dialog open={musicPickerOpen} onOpenChange={setMusicPickerOpen}>
-        <DialogContent>
+      <Dialog
+        open={musicPickerOpen}
+        onOpenChange={(o) => {
+          setMusicPickerOpen(o);
+          if (!o) setMusicPreviewId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Choose background music</DialogTitle>
           </DialogHeader>
-          {audioLibrary.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No audio in your library yet. Drag &amp; drop audio files in the Assets step.
-            </p>
-          ) : (
-            <div className="flex max-h-[50vh] flex-col gap-2 overflow-y-auto">
-              {audioLibrary.map((a) => (
-                <div key={a.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
-                  <Music className="size-4 shrink-0 text-accent" />
-                  <span className="min-w-0 flex-1 truncate text-sm">{a.name}</span>
-                  <audio src={`/media/${id}/${a.file}`} controls className="h-8 max-w-[180px]" />
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={musicFromLib.isPending}
-                    onClick={async () => {
-                      try {
-                        await musicFromLib.mutateAsync(a.id);
-                        if (!music.enabled) setMusic(id, { enabled: true });
-                        toast.success('Background music set');
-                        setMusicPickerOpen(false);
-                      } catch (e: any) {
-                        toast.error(String(e.message ?? e));
-                      }
-                    }}
-                  >
-                    Use
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
+          {(() => {
+            const q = musicSearch.trim().toLowerCase();
+            const match = (n: string) => !q || n.toLowerCase().includes(q);
+            const ws = audioLibrary.filter((a) => match(a.name));
+            const gl = globalMusic.filter((a) => match(a.name));
+            const useTrack = async (fn: Promise<unknown>) => {
+              try {
+                await fn;
+                if (!music.enabled) setMusic(id, { enabled: true });
+                toast.success('Background music set');
+                setMusicPickerOpen(false);
+              } catch (e: any) {
+                toast.error(String(e.message ?? e));
+              }
+            };
+            const busy = musicFromLib.isPending || musicFromGlobal.isPending;
+            const togglePreview = (uid: string, src: string) => {
+              const el = musicPreviewRef.current;
+              if (!el) return;
+              if (musicPreviewId === uid) {
+                el.pause();
+                setMusicPreviewId(null);
+                return;
+              }
+              el.src = src;
+              setMusicPreviewId(uid);
+              el.play().catch(() => {});
+            };
+            const Card = ({ uid, name, src, onUse }: { uid: string; name: string; src: string; onUse: () => void }) => (
+              <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/20 p-2.5">
+                <button
+                  onClick={() => togglePreview(uid, src)}
+                  title="Preview"
+                  className="flex min-w-0 items-start gap-1.5 text-left"
+                >
+                  {musicPreviewId === uid ? (
+                    <Pause className="mt-0.5 size-3.5 shrink-0 text-accent" />
+                  ) : (
+                    <Play className="mt-0.5 size-3.5 shrink-0 text-accent" />
+                  )}
+                  <span className="line-clamp-2 text-xs font-medium leading-snug" title={name}>
+                    {name}
+                  </span>
+                </button>
+                <Button variant="primary" size="sm" className="h-7 w-full text-xs" disabled={busy} onClick={onUse}>
+                  Use
+                </Button>
+              </div>
+            );
+            const Section = ({
+              title,
+              items,
+              empty,
+              kind
+            }: {
+              title: string;
+              items: { id: string; name: string; file: string }[];
+              empty: string;
+              kind: 'ws' | 'gl';
+            }) => (
+              <div className="grid gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {title} ({items.length})
+                </p>
+                {items.length === 0 ? (
+                  <p className="rounded-lg bg-muted/40 p-3 text-center text-xs text-muted-foreground">{empty}</p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {items.map((a) => (
+                      <Card
+                        key={`${kind}-${a.id}`}
+                        uid={`${kind}-${a.id}`}
+                        name={a.name}
+                        src={kind === 'ws' ? `/media/${id}/${a.file}` : libraryUrl(a.file)}
+                        onUse={() =>
+                          useTrack(kind === 'ws' ? musicFromLib.mutateAsync(a.id) : musicFromGlobal.mutateAsync(a.id))
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+            return (
+              <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto px-1 ">
+                <Input
+                  value={musicSearch}
+                  onChange={(e) => setMusicSearch(e.target.value)}
+                  placeholder="Search music in both libraries…"
+                  className="h-9 my-2"
+                />
+                <Section
+                  title="Workspace"
+                  items={ws}
+                  kind="ws"
+                  empty={
+                    audioLibrary.length === 0
+                      ? 'No audio in this workspace yet — add some in the Assets step.'
+                      : 'No matches.'
+                  }
+                />
+                <Section
+                  title="Global library"
+                  items={gl}
+                  kind="gl"
+                  empty={globalMusic.length === 0 ? 'No global music yet — add some on the Audios page.' : 'No matches.'}
+                />
+                <audio ref={musicPreviewRef} onEnded={() => setMusicPreviewId(null)} className="hidden" />
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
@@ -738,6 +842,7 @@ function EditorPreview({
   const musicRef = useRef<HTMLAudioElement>(null);
   const sfxRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const lastT = useRef(0);
+  const videoElRef = useRef<HTMLVideoElement>(null);
 
   // Fire each placed sound when the playhead crosses its start time.
   useEffect(() => {
@@ -834,6 +939,47 @@ function EditorPreview({
   // Brief transition fade at the start of each clip.
   const fadeT = active ? Math.min(1, (time - active.start) / 0.4) : 1;
 
+  // Scrub the preview <video> to match the playhead — only while PAUSED.
+  // During playback we let the element run on its own media clock (see the
+  // play/pause effect below); forcing currentTime every frame would trigger a
+  // seek per frame and make the preview jitter, even though the render is fine.
+  useEffect(() => {
+    if (playing) return;
+    const v = videoElRef.current;
+    if (!v || !active?.videoSrc) return;
+    const desired = (active.trimStartSec ?? 0) + Math.max(0, time - active.start);
+    if (Math.abs(v.currentTime - desired) > 0.05) {
+      try {
+        v.currentTime = desired;
+      } catch {
+        /* ignore */
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [time, playing, active?.index, active?.videoSrc, active?.trimStartSec, active?.start]);
+
+  // Start/stop the preview <video> with the transport. On play (or when a new
+  // video clip becomes active mid-playback) we seek once to the correct trim
+  // offset, then let it play freely — self-correcting at every clip boundary.
+  useEffect(() => {
+    const v = videoElRef.current;
+    if (!v || !active?.videoSrc) return;
+    if (playing) {
+      const desired = (active.trimStartSec ?? 0) + Math.max(0, time - active.start);
+      if (Math.abs(v.currentTime - desired) > 0.15) {
+        try {
+          v.currentTime = desired;
+        } catch {
+          /* ignore */
+        }
+      }
+      v.play().catch(() => {});
+    } else {
+      v.pause();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, active?.index, active?.videoSrc]);
+
   const line = captionLines.find((l) => time >= l.start && time < l.end);
   const scale = frameW / 1080;
 
@@ -844,15 +990,27 @@ function EditorPreview({
         className="relative mx-auto aspect-[9/16] w-full max-w-[300px] overflow-hidden rounded-xl border-2 border-accent bg-black"
       >
         <div className="absolute inset-0 overflow-hidden bg-black">
-          {active && (
-            <img
-              key={active.index}
-              src={active.thumb}
-              alt=""
-              className="size-full object-cover"
-              style={{ transform: fx.transform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
-            />
-          )}
+          {active &&
+            (active.videoSrc ? (
+              <video
+                key={`v-${active.index}`}
+                ref={videoElRef}
+                src={active.videoSrc}
+                muted
+                playsInline
+                preload="auto"
+                className="size-full object-cover"
+                style={{ transform: fx.transform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
+              />
+            ) : (
+              <img
+                key={active.index}
+                src={active.thumb}
+                alt=""
+                className="size-full object-cover"
+                style={{ transform: fx.transform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
+              />
+            ))}
           {captionsEnabled && line && captionSettings && (() => {
             const words = captionWords(line);
             const activeIdx = words.findIndex((w) => time >= w.start && time < w.end);

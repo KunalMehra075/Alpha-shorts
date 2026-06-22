@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { z } from 'zod';
 import { ah } from '../lib/async';
 import { deleteLibraryItem, getLibrary, readManifest } from '../lib/store';
-import { addToLibrary } from '../lib/library';
+import { addToLibrary, addToLibraryFromGlobal } from '../lib/library';
 
 export const libraryRouter = Router({ mergeParams: true });
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 const pid = (req: any) => req.params.id as string;
+const FromGlobalBody = z.object({ itemId: z.string().min(1) });
 
 // GET all library items.
 libraryRouter.get(
@@ -29,6 +31,15 @@ libraryRouter.post(
       return;
     }
     res.status(201).json(addToLibrary({ id: pid(req), buffer: file.buffer, originalName: file.originalname }));
+  })
+);
+
+// POST copy a GLOBAL media-library item into this workspace's library.
+libraryRouter.post(
+  '/from-global',
+  ah((req, res) => {
+    const body = FromGlobalBody.parse(req.body);
+    res.status(201).json(addToLibraryFromGlobal({ id: pid(req), itemId: body.itemId }));
   })
 );
 

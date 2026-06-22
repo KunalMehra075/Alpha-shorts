@@ -1,9 +1,10 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, statSync, writeFileSync } from 'node:fs';
+import { extname, join } from 'node:path';
 import { customAlphabet } from 'nanoid';
 import { ensureDir } from './fsx';
 import { workspaceDir } from './paths';
 import { addLibraryItem, HttpError, libraryDir } from './store';
+import { GLOBAL_MEDIA_DIR, getMediaLibrary } from './media';
 import type { LibraryItem } from './schema';
 
 const shortId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 10);
@@ -39,6 +40,30 @@ export function addToLibrary(opts: { id: string; buffer: Buffer; originalName: s
     file: rel,
     name: originalName,
     sizeBytes: buffer.length,
+    createdAt: new Date().toISOString()
+  };
+  addLibraryItem(id, item);
+  return item;
+}
+
+// Copy a GLOBAL media-library item into this workspace's library.
+export function addToLibraryFromGlobal(opts: { id: string; itemId: string }): LibraryItem {
+  const { id, itemId } = opts;
+  const g = getMediaLibrary().find((m) => m.id === itemId);
+  if (!g) throw new HttpError(404, `Global media "${itemId}" not found.`);
+  ensureDir(libraryDir(id));
+  const ext = extname(g.file) || '';
+  const newId = shortId();
+  const rel = `library/${newId}${ext}`;
+  const dest = join(workspaceDir(id), rel);
+  copyFileSync(join(GLOBAL_MEDIA_DIR, g.file), dest);
+
+  const item: LibraryItem = {
+    id: newId,
+    kind: g.kind,
+    file: rel,
+    name: g.name,
+    sizeBytes: statSync(dest).size,
     createdAt: new Date().toISOString()
   };
   addLibraryItem(id, item);

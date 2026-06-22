@@ -3,12 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   Film,
+  HardDriveUpload,
   ImagePlus,
   Images,
+  Layers,
   Loader2,
   Music,
   Play,
   Plus,
+  Scissors,
   Search,
   Sparkles,
   Trash2,
@@ -26,20 +29,25 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TabHeader } from '@/components/TabHeader';
 import { cn } from '@/lib/utils';
 import {
+  useAddLibraryFromGlobal,
+  useAddSceneFromMedia,
   useAssets,
   useAutofillAssets,
   useBuildBreakdown,
   useClearSceneAsset,
   useDeleteLibrary,
   useLibrary,
+  useMediaLibrary,
+  useRemoveScene,
   useScenes,
   useSearchSceneAssets,
   useSelectSceneAsset,
   useSelectSceneFromLibrary,
+  useTrimSceneAsset,
   useUpdateScene,
   useUploadLibrary,
   useUploadSceneAsset
@@ -47,7 +55,8 @@ import {
 import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
 import { placeholderDataUri } from '@/lib/placeholder';
 import { formatBytes } from '@/lib/mockMedia';
-import type { AssetRef, LibraryItem, Scene, SceneAssets, ScenePatch, VisualType } from '@/lib/types';
+import { libraryUrl } from '@/lib/utils';
+import type { AssetRef, LibraryItem, MediaItem, Scene, SceneAssets, ScenePatch, VisualType } from '@/lib/types';
 
 const VISUAL_TYPES: VisualType[] = ['Image', 'Video', 'Animation', 'SplitScreen'];
 const EMPTY_ROW = { sceneNumber: 0, keywords: [], imagePrompt: '', candidates: [], selected: null } satisfies SceneAssets;
@@ -82,11 +91,20 @@ export function AssetPage() {
   const library = libraryData ?? [];
   const uploadLib = useUploadLibrary(id);
   const delLib = useDeleteLibrary(id);
+  const addFromMedia = useAddSceneFromMedia(id);
+  const removeScene = useRemoveScene(id);
+  const trimAsset = useTrimSceneAsset(id);
 
   const [selected, setSelected] = useState(0);
   const [modalItem, setModalItem] = useState<LibraryItem | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);
+
+  // Whether this short has a script/narration (drives spoken-line columns/fields).
+  const hasScript =
+    workspace.script.currentVersion != null || scenes.some((s) => (s.spokenLine ?? '').trim().length > 0);
 
   const addToLibrary = (files: File[]) => {
     const media = files.filter((f) => /^(image|video|audio)\//.test(f.type));
@@ -112,8 +130,9 @@ export function AssetPage() {
     }
   };
 
-  // No breakdown yet → offer to build it from script or transcript.
-  if (!scenes.length) {
+  // No scenes yet and the user hasn't chosen manual → offer both entry points.
+  if (!scenes.length && !manualMode) {
+    const canAi = hasScript || workspace.captions.hasTranscript;
     return (
       <div className="animate-fade-in">
         <TabHeader
@@ -122,33 +141,59 @@ export function AssetPage() {
           description="Plan the scene-by-scene breakdown, then assign a visual to each scene."
           status={workspace.stages.assets.status}
         />
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-3 p-12 text-center">
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
-              <Wand2 className="size-7 text-muted-foreground" />
-            </div>
-            <p className="text-base font-semibold">No scene breakdown yet</p>
-            <p className="max-w-md text-sm text-muted-foreground">
-              Build a scene-by-scene breakdown from your <span className="font-medium">script</span> —
-              or, if you skipped the Script step, from your <span className="font-medium">audio's
-              caption transcript</span>. Every field stays editable afterwards.
-            </p>
-            <Button variant="primary" onClick={runBuild} disabled={build.isPending || scenesLoading}>
-              {build.isPending ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" /> Building…
-                </>
-              ) : (
-                <>
-                  <Wand2 className="size-4" /> Build scene breakdown
-                </>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* AI */}
+          <Card className="border-dashed">
+            <CardContent className="flex h-full flex-col items-center gap-3 p-10 text-center">
+              <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
+                <Wand2 className="size-7 text-muted-foreground" />
+              </div>
+              <p className="text-base font-semibold">Generate with AI</p>
+              <p className="max-w-xs text-sm text-muted-foreground">
+                Split your <span className="font-medium">script</span> (or the caption transcript)
+                into scenes automatically. Every field stays editable.
+              </p>
+              <Button
+                variant="primary"
+                className="mt-auto"
+                onClick={runBuild}
+                disabled={build.isPending || scenesLoading || !canAi}
+              >
+                {build.isPending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Building…
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="size-4" /> Generate with AI
+                  </>
+                )}
+              </Button>
+              {!canAi && (
+                <p className="text-[11px] text-muted-foreground">
+                  Needs a script (step 1) or audio + captions (steps 2–3) first.
+                </p>
               )}
-            </Button>
-            <p className="text-[11px] text-muted-foreground">
-              Needs a script (step 1) or audio + captions (steps 2–3) first.
-            </p>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          {/* Manual */}
+          <Card className="border-dashed">
+            <CardContent className="flex h-full flex-col items-center gap-3 p-10 text-center">
+              <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
+                <Layers className="size-7 text-muted-foreground" />
+              </div>
+              <p className="text-base font-semibold">Build manually</p>
+              <p className="max-w-xs text-sm text-muted-foreground">
+                Add scenes one by one from your assets — no script needed. Pick images and videos,
+                trim clips, set durations.
+              </p>
+              <Button variant="secondary" className="mt-auto" onClick={() => setManualMode(true)}>
+                <Layers className="size-4" /> Build manually
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -156,11 +201,13 @@ export function AssetPage() {
   const rowFor = (s: Scene, i: number): SceneAssets =>
     rows.find((r) => r.sceneNumber === (s.scene ?? i + 1)) ?? { ...EMPTY_ROW, sceneNumber: s.scene ?? i + 1 };
 
-  const selScene = scenes[selected] ?? scenes[0];
+  const hasScenes = scenes.length > 0;
   const selIndex = scenes[selected] ? selected : 0;
-  const selNumber = selScene.scene ?? selIndex + 1;
-  const selRow = rowFor(selScene, selIndex);
+  const selScene = scenes[selIndex];
+  const selNumber = selScene ? selScene.scene ?? selIndex + 1 : 0;
+  const selRow = selScene ? rowFor(selScene, selIndex) : EMPTY_ROW;
   const assignedCount = scenes.filter((s, i) => rowFor(s, i).selected).length;
+  const colSpan = 5 + (hasScript ? 2 : 0); // # + [Spoken] + Type + Dur + [Keywords] + Asset + remove
 
   return (
     <div
@@ -198,25 +245,32 @@ export function AssetPage() {
         status={workspace.stages.assets.status}
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={build.isPending} onClick={runBuild}>
-              {build.isPending ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
-              Rebuild breakdown
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={autofill.isPending}
-              onClick={async () => {
-                try {
-                  await autofill.mutateAsync();
-                  toast.success('Auto-filled scenes from top stock results');
-                } catch (e: any) {
-                  toast.error(String(e.message ?? e));
-                }
-              }}
-            >
-              {autofill.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-              Auto-fill all
+            {hasScript && (
+              <Button variant="outline" size="sm" disabled={build.isPending} onClick={runBuild}>
+                {build.isPending ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
+                Rebuild breakdown
+              </Button>
+            )}
+            {hasScript && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={autofill.isPending}
+                onClick={async () => {
+                  try {
+                    await autofill.mutateAsync();
+                    toast.success('Auto-filled scenes from top stock results');
+                  } catch (e: any) {
+                    toast.error(String(e.message ?? e));
+                  }
+                }}
+              >
+                {autofill.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                Auto-fill all
+              </Button>
+            )}
+            <Button variant="primary" size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="size-4" /> Add Scene
             </Button>
           </div>
         }
@@ -231,49 +285,66 @@ export function AssetPage() {
                 <thead>
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="p-3 font-medium">#</th>
-                    <th className="p-3 font-medium">Spoken Line</th>
+                    {hasScript && <th className="p-3 font-medium">Spoken Line</th>}
+                    <th className="p-3 font-medium">Type</th>
                     <th className="p-3 font-medium">Dur</th>
-                    <th className="p-3 font-medium">Keywords</th>
+                    {hasScript && <th className="p-3 font-medium">Keywords</th>}
                     <th className="p-3 font-medium">Asset</th>
+                    <th className="p-3" />
                   </tr>
                 </thead>
                 <tbody>
                   {scenes.map((s, i) => {
                     const r = rowFor(s, i);
                     const thumb = thumbFor(id, r.selected);
+                    const sceneNo = s.scene ?? i + 1;
                     return (
                       <tr
                         key={i}
                         onClick={() => setSelected(i)}
                         className={cn(
-                          'cursor-pointer border-b border-border/60 transition-colors',
+                          'group cursor-pointer border-b border-border/60 transition-colors',
                           selIndex === i ? 'bg-accent/10' : 'hover:bg-muted/50'
                         )}
                       >
                         <td className="p-3 align-top">
                           <Badge variant={selIndex === i ? 'accent' : 'default'}>{i + 1}</Badge>
                         </td>
-                        <td className="max-w-[260px] p-3 align-top">
-                          <p className="line-clamp-2 text-foreground/90">{s.spokenLine || '—'}</p>
+                        {hasScript && (
+                          <td className="max-w-[260px] p-3 align-top">
+                            <p className="line-clamp-2 text-foreground/90">{s.spokenLine || '—'}</p>
+                          </td>
+                        )}
+                        <td className="whitespace-nowrap p-3 align-top text-xs text-muted-foreground">
+                          {s.visualType}
                         </td>
                         <td className="whitespace-nowrap p-3 align-top text-xs text-muted-foreground">
                           {(s.end - s.start).toFixed(1)}s
                         </td>
-                        <td className="max-w-[160px] p-3 align-top">
-                          <div className="flex flex-wrap gap-1">
-                            {(s.searchKeywords ?? []).slice(0, 3).map((k) => (
-                              <span
-                                key={k}
-                                className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
-                              >
-                                {k}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
+                        {hasScript && (
+                          <td className="max-w-[160px] p-3 align-top">
+                            <div className="flex flex-wrap gap-1">
+                              {(s.searchKeywords ?? []).slice(0, 3).map((k) => (
+                                <span
+                                  key={k}
+                                  className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                                >
+                                  {k}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        )}
                         <td className="p-3 align-top">
                           {r.selected ? (
-                            thumb ? (
+                            r.selected.file && r.selected.kind === 'video' ? (
+                              <video
+                                src={`/media/${id}/${r.selected.file}?v=${r.selected.sizeBytes}`}
+                                muted
+                                preload="metadata"
+                                className="h-12 w-12 rounded object-cover ring-1 ring-border"
+                              />
+                            ) : thumb ? (
                               <img src={thumb} alt="" className="h-12 w-12 rounded object-cover ring-1 ring-border" />
                             ) : (
                               <span className="inline-flex h-12 w-8 items-center justify-center rounded bg-muted ring-1 ring-border">
@@ -284,9 +355,44 @@ export function AssetPage() {
                             <span className="text-xs text-muted-foreground">none</span>
                           )}
                         </td>
+                        <td className="p-3 align-top">
+                          <button
+                            title="Remove scene"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeScene
+                                .mutateAsync(sceneNo)
+                                .then(
+                                  () => setSelected((cur) => Math.max(0, cur - (i <= cur ? 1 : 0))),
+                                  (err) => toast.error(String(err.message ?? err))
+                                );
+                            }}
+                            className="rounded p-1.5 text-muted-foreground opacity-0 transition hover:bg-muted hover:text-destructive group-hover:opacity-100"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
+                  {/* Full-width Add Scene row */}
+                  <tr>
+                    <td colSpan={colSpan} className="p-0">
+                      <button
+                        onClick={() => setAddOpen(true)}
+                        className="flex w-full items-center justify-center gap-2 py-3 text-sm font-medium text-muted-foreground transition hover:bg-muted/50 hover:text-accent"
+                      >
+                        <Plus className="size-4" /> Add Scene
+                      </button>
+                    </td>
+                  </tr>
+                  {!hasScenes && (
+                    <tr>
+                      <td colSpan={colSpan} className="px-3 pb-4 text-center text-xs text-muted-foreground">
+                        No scenes yet — click “Add Scene” to pick your first asset.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -295,29 +401,50 @@ export function AssetPage() {
 
         {/* Inspector — remounts per scene so local edits reset cleanly */}
         <div className="flex min-w-0 flex-col gap-5 xl:sticky xl:top-4 xl:self-start">
-          <SceneInspector
-            key={selNumber}
-            id={id}
-            index={selIndex}
-            sceneNumber={selNumber}
-            scene={selScene}
-            row={selRow}
-            searching={search.isPending && search.variables?.sceneNumber === selNumber}
-            selecting={select.isPending}
-            onUpdate={(patch) => updateScene.mutate({ sceneNumber: selNumber, patch })}
-            onSearch={(keywords) =>
-              search.mutateAsync({ sceneNumber: selNumber, keywords }).catch((e) => toast.error(String(e.message ?? e)))
-            }
-            onSelect={(ref) =>
-              select.mutateAsync({ sceneNumber: selNumber, ref }).catch((e) => toast.error(String(e.message ?? e)))
-            }
-            onClear={() => clear.mutate(selNumber)}
-            onUpload={(file) =>
-              upload
-                .mutateAsync({ sceneNumber: selNumber, file })
-                .then(() => toast.success('Uploaded'), (e) => toast.error(String(e.message ?? e)))
-            }
-          />
+          {hasScenes && selScene ? (
+            <SceneInspector
+              key={selNumber}
+              id={id}
+              index={selIndex}
+              sceneNumber={selNumber}
+              scene={selScene}
+              row={selRow}
+              hasScript={hasScript}
+              searching={search.isPending && search.variables?.sceneNumber === selNumber}
+              selecting={select.isPending}
+              onUpdate={(patch) => updateScene.mutate({ sceneNumber: selNumber, patch })}
+              onDuration={(dur) => {
+                const sel = selRow.selected;
+                if (sel && sel.kind === 'video' && sel.file) {
+                  const start = sel.trimStartSec ?? 0;
+                  trimAsset
+                    .mutateAsync({ sceneNumber: selNumber, trimStartSec: start, trimEndSec: start + dur })
+                    .catch((e) => toast.error(String(e.message ?? e)));
+                } else {
+                  updateScene.mutate({ sceneNumber: selNumber, patch: { durationSec: dur } });
+                }
+              }}
+              onSearch={(keywords) =>
+                search.mutateAsync({ sceneNumber: selNumber, keywords }).catch((e) => toast.error(String(e.message ?? e)))
+              }
+              onSelect={(ref) =>
+                select.mutateAsync({ sceneNumber: selNumber, ref }).catch((e) => toast.error(String(e.message ?? e)))
+              }
+              onClear={() => clear.mutate(selNumber)}
+              onUpload={(file) =>
+                upload
+                  .mutateAsync({ sceneNumber: selNumber, file })
+                  .then(() => toast.success('Uploaded'), (e) => toast.error(String(e.message ?? e)))
+              }
+            />
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-2 p-10 text-center text-muted-foreground">
+                <Layers className="size-7" />
+                <p className="text-sm">Add a scene to start building your timeline.</p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -342,6 +469,27 @@ export function AssetPage() {
       {modalItem && (
         <LibraryModal id={id} item={modalItem} sceneNumber={selNumber} onClose={() => setModalItem(null)} />
       )}
+
+      {addOpen && (
+        <AddSceneModal
+          id={id}
+          library={library}
+          adding={addFromMedia.isPending}
+          onImport={addToLibrary}
+          uploading={uploadLib.isPending}
+          onAdd={async (payload) => {
+            try {
+              const { scenes: next } = await addFromMedia.mutateAsync(payload);
+              setSelected(Math.max(0, next.length - 1));
+              setAddOpen(false);
+              toast.success('Scene added');
+            } catch (e: any) {
+              toast.error(String(e.message ?? e));
+            }
+          }}
+          onClose={() => setAddOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -352,9 +500,11 @@ function SceneInspector({
   sceneNumber,
   scene,
   row,
+  hasScript,
   searching,
   selecting,
   onUpdate,
+  onDuration,
   onSearch,
   onSelect,
   onClear,
@@ -365,9 +515,11 @@ function SceneInspector({
   sceneNumber: number;
   scene: Scene;
   row: SceneAssets;
+  hasScript: boolean;
   searching: boolean;
   selecting: boolean;
   onUpdate: (patch: ScenePatch) => void;
+  onDuration: (durationSec: number) => void;
   onSearch: (keywords: string[]) => void;
   onSelect: (ref: AssetRef) => void;
   onClear: () => void;
@@ -380,25 +532,41 @@ function SceneInspector({
   const [visualDescription, setVisualDescription] = useState(scene.visualDescription);
   const [durationSec, setDurationSec] = useState(Math.max(0.5, Math.round((scene.end - scene.start) * 10) / 10));
   const [dirty, setDirty] = useState(false);
+  const [durDirty, setDurDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const updateRef = useRef(onUpdate);
   updateRef.current = onUpdate;
+  const durRef = useRef(onDuration);
+  durRef.current = onDuration;
 
   const parsedKeywords = () => keywords.split(',').map((k) => k.trim()).filter(Boolean);
 
+  // Text fields → updateScene (duration handled separately so videos can trim).
   useEffect(() => {
     if (!dirty) return;
     const h = setTimeout(() => {
-      updateRef.current({ spokenLine, searchKeywords: parsedKeywords(), imagePrompt, visualDescription, durationSec });
+      updateRef.current({ spokenLine, searchKeywords: parsedKeywords(), imagePrompt, visualDescription });
       setDirty(false);
     }, 900);
     return () => clearTimeout(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spokenLine, keywords, imagePrompt, visualDescription, durationSec, dirty]);
+  }, [spokenLine, keywords, imagePrompt, visualDescription, dirty]);
+
+  // Duration → updateScene (image) or trim-from-end (video). Routed by parent.
+  useEffect(() => {
+    if (!durDirty) return;
+    const h = setTimeout(() => {
+      durRef.current(durationSec);
+      setDurDirty(false);
+    }, 700);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [durationSec, durDirty]);
 
   const candidates = row.candidates;
   const selected = row.selected;
   const selectedThumb = thumbFor(id, selected);
+  const isVideo = selected?.kind === 'video';
 
   return (
     <Card>
@@ -406,15 +574,16 @@ function SceneInspector({
         <div className="flex items-center gap-2">
           <Badge variant="accent" className="whitespace-nowrap text-sm">Scene {index + 1}</Badge>
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-            <span>Duration</span>
+            <span title={isVideo ? 'Trims the clip from the end' : undefined}>Duration</span>
             <Input
               type="number"
               min={0.5}
+              max={60}
               step={0.5}
               value={durationSec}
               onChange={(e) => {
-                setDurationSec(Math.max(0.5, Number(e.target.value) || 0.5));
-                setDirty(true);
+                setDurationSec(Math.max(0.5, Math.min(60, Number(e.target.value) || 0.5)));
+                setDurDirty(true);
               }}
               className="h-8 w-20 text-sm"
             />
@@ -434,24 +603,33 @@ function SceneInspector({
         </div>
 
         {/* Spoken line */}
-        <div className="grid gap-1.5">
-          <Label>Spoken line</Label>
-          <Textarea
-            value={spokenLine}
-            onChange={(e) => {
-              setSpokenLine(e.target.value);
-              setDirty(true);
-            }}
-            className="min-h-[56px] text-sm"
-          />
-        </div>
+        {hasScript && (
+          <div className="grid gap-1.5">
+            <Label>Spoken line</Label>
+            <Textarea
+              value={spokenLine}
+              onChange={(e) => {
+                setSpokenLine(e.target.value);
+                setDirty(true);
+              }}
+              className="min-h-[56px] text-sm"
+            />
+          </div>
+        )}
 
         {/* Current asset */}
         <div className="grid max-w-full gap-2">
           <Label>Selected asset</Label>
           {selected ? (
             <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-              {selectedThumb ? (
+              {selected.file && selected.kind === 'video' ? (
+                <video
+                  src={`/media/${id}/${selected.file}?v=${selected.sizeBytes}`}
+                  muted
+                  preload="metadata"
+                  className="h-14 w-14 rounded object-cover"
+                />
+              ) : selectedThumb ? (
                 <img src={selectedThumb} alt="" className="h-14 w-14 rounded object-cover" />
               ) : (
                 <span className="inline-flex h-14 w-14 items-center justify-center rounded bg-muted">
@@ -513,31 +691,35 @@ function SceneInspector({
         </div>
 
         {/* Visual description */}
-        <div className="grid gap-1.5">
-          <Label>Visual description</Label>
-          <Input
-            value={visualDescription}
-            onChange={(e) => {
-              setVisualDescription(e.target.value);
-              setDirty(true);
-            }}
-            className="h-9 text-sm"
-          />
-        </div>
+        {hasScript && (
+          <div className="grid gap-1.5">
+            <Label>Visual description</Label>
+            <Input
+              value={visualDescription}
+              onChange={(e) => {
+                setVisualDescription(e.target.value);
+                setDirty(true);
+              }}
+              className="h-9 text-sm"
+            />
+          </div>
+        )}
 
         {/* AI image prompt */}
-        <div className="grid gap-1.5">
-          <Label>AI image prompt</Label>
-          <Textarea
-            value={imagePrompt}
-            onChange={(e) => {
-              setImagePrompt(e.target.value);
-              setDirty(true);
-            }}
-            className="min-h-[80px] font-mono text-[12px] leading-relaxed"
-            placeholder="Saved for later — AI image generation is wired in a future round."
-          />
-        </div>
+        {hasScript && (
+          <div className="grid gap-1.5">
+            <Label>AI image prompt</Label>
+            <Textarea
+              value={imagePrompt}
+              onChange={(e) => {
+                setImagePrompt(e.target.value);
+                setDirty(true);
+              }}
+              className="min-h-[80px] font-mono text-[12px] leading-relaxed"
+              placeholder="Saved for later — AI image generation is wired in a future round."
+            />
+          </div>
+        )}
 
         {/* Suggestions */}
         <div className="grid gap-1.5">
@@ -602,6 +784,7 @@ function AssetLibrary({
   onDelete: (itemId: string) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [globalOpen, setGlobalOpen] = useState(false);
   const images = items.filter((i) => i.kind === 'image');
   const videos = items.filter((i) => i.kind === 'video');
   const audios = items.filter((i) => i.kind === 'audio');
@@ -655,9 +838,14 @@ function AssetLibrary({
       <CardContent className="p-5">
         <div className="mb-1 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Asset Library</h3>
-          <Button variant="outline" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
-            {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Add media
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setGlobalOpen(true)}>
+              <Layers className="size-4" /> Add from global media
+            </Button>
+            <Button variant="outline" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
+              {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Add media
+            </Button>
+          </div>
           <input
             ref={fileRef}
             type="file"
@@ -714,7 +902,399 @@ function AssetLibrary({
           </TabsContent>
         </Tabs>
       </CardContent>
+      {globalOpen && <GlobalLibraryPicker id={id} onClose={() => setGlobalOpen(false)} />}
     </Card>
+  );
+}
+
+// ── Add-from-global-media modal (copies global items into the workspace library) ──
+function GlobalLibraryPicker({ id, onClose }: { id: string; onClose: () => void }) {
+  const { data: gImages } = useMediaLibrary('image');
+  const { data: gVideos } = useMediaLibrary('video');
+  const { data: gAudio } = useMediaLibrary('audio');
+  const addFromGlobal = useAddLibraryFromGlobal(id);
+  const [search, setSearch] = useState('');
+  const [added, setAdded] = useState<Record<string, boolean>>({});
+
+  const q = search.trim().toLowerCase();
+  const filt = (list: MediaItem[] | undefined) =>
+    (list ?? []).filter((m) => !q || m.name.toLowerCase().includes(q));
+
+  const add = async (m: MediaItem) => {
+    try {
+      await addFromGlobal.mutateAsync(m.id);
+      setAdded((a) => ({ ...a, [m.id]: true }));
+      toast.success(`Added “${m.name}” to the library`);
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+
+  const VisualGrid = ({ list, empty }: { list: MediaItem[]; empty: string }) =>
+    list.length === 0 ? (
+      <p className="py-10 text-center text-sm text-muted-foreground">{empty}</p>
+    ) : (
+      <div className="grid max-h-[48vh] grid-cols-3 gap-2 overflow-y-auto p-0.5 sm:grid-cols-4">
+        {list.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => add(m)}
+            disabled={addFromGlobal.isPending}
+            title={`${m.name} — add to workspace`}
+            className={cn(
+              'group relative aspect-[9/16] overflow-hidden rounded-lg ring-1 transition disabled:opacity-60',
+              added[m.id] ? 'ring-2 ring-accent' : 'ring-border hover:ring-2 hover:ring-accent'
+            )}
+          >
+            {m.kind === 'image' ? (
+              <img src={libraryUrl(m.file)} alt="" className="size-full object-cover" loading="lazy" />
+            ) : (
+              <video src={libraryUrl(m.file)} muted preload="metadata" className="size-full object-cover" />
+            )}
+            {added[m.id] && (
+              <span className="absolute inset-0 flex items-center justify-center bg-accent/30 text-[11px] font-semibold text-white">
+                Added ✓
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    );
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Add from global media</DialogTitle>
+          <DialogDescription>Copy images, videos, or music from your global library into this workspace.</DialogDescription>
+        </DialogHeader>
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search global media…" className="h-9" />
+        <Tabs defaultValue="images" className="mt-1">
+          <TabsList>
+            <TabsTrigger value="images">Images ({filt(gImages).length})</TabsTrigger>
+            <TabsTrigger value="videos">Videos ({filt(gVideos).length})</TabsTrigger>
+            <TabsTrigger value="music">Music ({filt(gAudio).length})</TabsTrigger>
+          </TabsList>
+          <TabsContent value="images">
+            <VisualGrid list={filt(gImages)} empty="No global images — add some on the Assets page." />
+          </TabsContent>
+          <TabsContent value="videos">
+            <VisualGrid list={filt(gVideos)} empty="No global videos — add some on the Assets page." />
+          </TabsContent>
+          <TabsContent value="music">
+            {filt(gAudio).length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">No global music — add some on the Audios page.</p>
+            ) : (
+              <div className="flex max-h-[48vh] flex-col gap-2 overflow-y-auto">
+                {filt(gAudio).map((m) => (
+                  <div key={m.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
+                    <Music className="size-4 shrink-0 text-accent" />
+                    <span className="min-w-0 flex-1 truncate text-sm">{m.name}</span>
+                    <audio src={libraryUrl(m.file)} controls preload="none" className="h-8 max-w-[160px]" />
+                    <Button variant={added[m.id] ? 'secondary' : 'primary'} size="sm" disabled={addFromGlobal.isPending} onClick={() => add(m)}>
+                      {added[m.id] ? 'Added ✓' : 'Add'}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Add-Scene modal ───────────────────────────────────────────────────────────
+type PickItem = { id: string; kind: 'image' | 'video'; name: string; url: string; source: 'library' | 'global' };
+
+function AddSceneModal({
+  id,
+  library,
+  adding,
+  onImport,
+  uploading,
+  onAdd,
+  onClose
+}: {
+  id: string;
+  library: LibraryItem[];
+  adding: boolean;
+  onImport: (files: File[]) => void;
+  uploading: boolean;
+  onAdd: (payload: {
+    source: 'library' | 'global';
+    itemId: string;
+    durationSec?: number;
+    trimStartSec?: number;
+    trimEndSec?: number;
+  }) => void;
+  onClose: () => void;
+}) {
+  const { data: gImages } = useMediaLibrary('image');
+  const { data: gVideos } = useMediaLibrary('video');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [trimTarget, setTrimTarget] = useState<PickItem | null>(null);
+
+  const localItems: PickItem[] = library
+    .filter((i) => i.kind === 'image' || i.kind === 'video')
+    .map((i) => ({ id: i.id, kind: i.kind as 'image' | 'video', name: i.name, url: `/media/${id}/${i.file}`, source: 'library' }));
+  const globalItems: PickItem[] = [...(gImages ?? []), ...(gVideos ?? [])].map((m: MediaItem) => ({
+    id: m.id,
+    kind: m.kind as 'image' | 'video',
+    name: m.name,
+    url: libraryUrl(m.file),
+    source: 'global'
+  }));
+
+  const pick = (it: PickItem) => {
+    if (it.kind === 'video') setTrimTarget(it);
+    else onAdd({ source: it.source, itemId: it.id, durationSec: 3 });
+  };
+
+  const Grid = ({ list, empty }: { list: PickItem[]; empty: string }) =>
+    list.length === 0 ? (
+      <p className="py-10 text-center text-sm text-muted-foreground">{empty}</p>
+    ) : (
+      <div className="grid max-h-[50vh] grid-cols-3 gap-2 overflow-y-auto p-0.5 sm:grid-cols-4">
+        {list.map((it) => (
+          <button
+            key={`${it.source}-${it.id}`}
+            onClick={() => pick(it)}
+            disabled={adding}
+            title={`${it.name} — ${it.kind}`}
+            className="group relative aspect-[9/16] overflow-hidden rounded-lg ring-1 ring-border transition hover:ring-2 hover:ring-accent disabled:opacity-60"
+          >
+            {it.kind === 'image' ? (
+              <img src={it.url} alt="" className="size-full object-cover" loading="lazy" />
+            ) : (
+              <video src={it.url} muted preload="metadata" className="size-full object-cover" />
+            )}
+            {it.kind === 'video' && (
+              <span className="absolute bottom-1 left-1 rounded bg-black/60 p-0.5">
+                <Play className="size-2.5 text-white" />
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    );
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        {trimTarget ? (
+          <TrimView
+            item={trimTarget}
+            busy={adding}
+            onBack={() => setTrimTarget(null)}
+            onConfirm={(trimStartSec, trimEndSec) =>
+              onAdd({ source: trimTarget.source, itemId: trimTarget.id, trimStartSec, trimEndSec })
+            }
+          />
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Add a scene</DialogTitle>
+              <DialogDescription>Pick an image or video. Videos can be trimmed next.</DialogDescription>
+            </DialogHeader>
+
+            <div className="flex justify-end">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const fs = Array.from(e.target.files ?? []);
+                  e.target.value = '';
+                  if (fs.length) onImport(fs);
+                }}
+              />
+              <Button variant="outline" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                {uploading ? <Loader2 className="size-4 animate-spin" /> : <HardDriveUpload className="size-4" />} Import
+              </Button>
+            </div>
+
+            <Tabs defaultValue="local">
+              <TabsList>
+                <TabsTrigger value="local">Local ({localItems.length})</TabsTrigger>
+                <TabsTrigger value="global">Global ({globalItems.length})</TabsTrigger>
+              </TabsList>
+              <TabsContent value="local">
+                <Grid list={localItems} empty="No workspace assets yet — use Import to add some." />
+              </TabsContent>
+              <TabsContent value="global">
+                <Grid list={globalItems} empty="No global assets yet — add them on the Assets page." />
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Step 2 of Add-Scene for videos: choose a trim window (0.5s–60s).
+const MAX_WIN = 60;
+const MIN_WIN = 0.5;
+
+function TrimView({
+  item,
+  busy,
+  onBack,
+  onConfirm
+}: {
+  item: PickItem;
+  busy: boolean;
+  onBack: () => void;
+  onConfirm: (startSec: number, endSec: number) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [duration, setDuration] = useState(0);
+  const [start, setStart] = useState(0);
+  const [end, setEnd] = useState(0);
+  const [drag, setDrag] = useState<null | 'start' | 'end' | 'region'>(null);
+  const regionAnchor = useRef<{ x: number; start: number; end: number } | null>(null);
+
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+
+  const onMeta = () => {
+    const d = round1(videoRef.current?.duration || 0);
+    setDuration(d);
+    setStart(0);
+    setEnd(Math.min(MAX_WIN, d > 0 ? d : 5));
+  };
+
+  const pxToSec = (clientX: number) => {
+    const el = trackRef.current;
+    if (!el || duration <= 0) return 0;
+    const r = el.getBoundingClientRect();
+    return Math.max(0, Math.min(duration, ((clientX - r.left) / r.width) * duration));
+  };
+
+  // Drag the handles / selection region with the pointer.
+  useEffect(() => {
+    if (!drag) return;
+    const move = (e: PointerEvent) => {
+      const t = pxToSec(e.clientX);
+      if (drag === 'start') {
+        let s = Math.max(0, Math.min(t, end - MIN_WIN));
+        if (end - s > MAX_WIN) s = end - MAX_WIN;
+        s = round1(s);
+        setStart(s);
+        if (videoRef.current) videoRef.current.currentTime = s;
+      } else if (drag === 'end') {
+        let en = Math.min(duration, Math.max(t, start + MIN_WIN));
+        if (en - start > MAX_WIN) en = start + MAX_WIN;
+        en = round1(en);
+        setEnd(en);
+        if (videoRef.current) videoRef.current.currentTime = en;
+      } else if (drag === 'region' && regionAnchor.current && trackRef.current) {
+        const a = regionAnchor.current;
+        const deltaSec = ((e.clientX - a.x) / trackRef.current.getBoundingClientRect().width) * duration;
+        const winLen = a.end - a.start;
+        const ns = round1(Math.max(0, Math.min(duration - winLen, a.start + deltaSec)));
+        setStart(ns);
+        setEnd(round1(ns + winLen));
+      }
+    };
+    const up = () => {
+      setDrag(null);
+      regionAnchor.current = null;
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag, start, end, duration]);
+
+  const len = Math.max(0, round1(end - start));
+  const startPct = duration > 0 ? (start / duration) * 100 : 0;
+  const endPct = duration > 0 ? (end / duration) * 100 : 100;
+
+  const Handle = ({ side, left }: { side: 'start' | 'end'; left: number }) => (
+    <div
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDrag(side);
+      }}
+      className="absolute inset-y-0 z-20 flex w-3.5 -translate-x-1/2 cursor-ew-resize items-center justify-center rounded bg-accent shadow"
+      style={{ left: `${left}%` }}
+      title={side === 'start' ? 'Trim start' : 'Trim end'}
+    >
+      <span className="h-5 w-0.5 rounded-full bg-white/90" />
+    </div>
+  );
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="line-clamp-2 break-words text-base">Trim “{item.name}”</DialogTitle>
+        <DialogDescription>Drag the handles to pick the slice (0.5s–60s).</DialogDescription>
+      </DialogHeader>
+      <div className="mx-auto aspect-[9/16] w-full max-w-[220px] overflow-hidden rounded-lg border border-border bg-black">
+        <video
+          ref={videoRef}
+          src={item.url}
+          controls
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={onMeta}
+          className="size-full object-contain"
+        />
+      </div>
+
+      {/* Trim bar: video strip with two draggable handles */}
+      <div className="select-none px-1.5 pt-1">
+        <div ref={trackRef} className="relative h-16 w-full rounded-lg border border-border bg-muted/30">
+          {/* clip strip */}
+          <div className="absolute inset-0 overflow-hidden rounded-lg">
+            <video src={item.url} muted preload="metadata" className="h-full w-full object-cover opacity-50" />
+          </div>
+          {/* dim outside the selection */}
+          <div className="absolute inset-y-0 left-0 rounded-l-lg bg-background/70" style={{ width: `${startPct}%` }} />
+          <div className="absolute inset-y-0 right-0 rounded-r-lg bg-background/70" style={{ width: `${100 - endPct}%` }} />
+          {/* selection region (drag to move the whole window) */}
+          <div
+            onPointerDown={(e) => {
+              e.preventDefault();
+              regionAnchor.current = { x: e.clientX, start, end };
+              setDrag('region');
+            }}
+            className="absolute inset-y-0 z-10 cursor-grab border-y-2 border-accent active:cursor-grabbing"
+            style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
+          />
+          <Handle side="start" left={startPct} />
+          <Handle side="end" left={endPct} />
+        </div>
+        <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+          <span>Start {start.toFixed(1)}s</span>
+          <span className="font-medium text-foreground">Clip {len.toFixed(1)}s</span>
+          <span>End {end.toFixed(1)}s</span>
+        </div>
+      </div>
+
+      <DialogFooter>
+        <Button variant="ghost" onClick={onBack}>
+          Back
+        </Button>
+        <Button variant="primary" disabled={busy || len < MIN_WIN} onClick={() => onConfirm(start, end)}>
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <Scissors className="size-4" />} Add scene ({len.toFixed(1)}s)
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 
@@ -743,11 +1323,11 @@ function LibraryModal({
   };
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="truncate">{item.name}</DialogTitle>
+          <DialogTitle className="line-clamp-2 break-words text-base">{item.name}</DialogTitle>
         </DialogHeader>
-        <div className="mx-auto aspect-[9/16] w-full max-w-[260px] overflow-hidden rounded-lg border border-border bg-black">
+        <div className="mx-auto aspect-[9/16] w-full max-w-[240px] overflow-hidden rounded-lg border border-border bg-black">
           {item.kind === 'image' ? (
             <img src={url} alt="" className="size-full object-contain" />
           ) : (

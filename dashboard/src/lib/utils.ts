@@ -27,6 +27,41 @@ export function formatBytes(bytes: number) {
   return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+// Compact number for analytics: 1234 -> 1.2K, 1250000 -> 1.3M.
+export function formatCompact(n: number): string {
+  if (!isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  if (abs < 1000) return String(Math.round(n));
+  const units = [
+    { v: 1e9, s: 'B' },
+    { v: 1e6, s: 'M' },
+    { v: 1e3, s: 'K' }
+  ];
+  for (const u of units) {
+    if (abs >= u.v) {
+      const val = n / u.v;
+      return `${val.toFixed(val >= 10 ? 0 : 1)}${u.s}`;
+    }
+  }
+  return String(Math.round(n));
+}
+
+// Minutes -> "1h 23m" / "45m" / "12s" (watch time is stored in minutes).
+export function formatWatchTime(minutes: number): string {
+  if (!minutes) return '0m';
+  if (minutes < 1) return `${Math.round(minutes * 60)}s`;
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+// Seconds -> "m:ss" (average view duration is stored in seconds).
+export function formatDurationSec(seconds: number): string {
+  const s = Math.round(seconds);
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+
 export function formatDate(iso: string) {
   try {
     return new Date(iso).toLocaleString(undefined, {

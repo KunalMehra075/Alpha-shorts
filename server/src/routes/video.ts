@@ -15,6 +15,7 @@ import {
   getRenderStatus,
   listRenders,
   saveMusic,
+  setMusicFromGlobal,
   setMusicFromLibrary,
   startRender
 } from '../lib/video';
@@ -93,6 +94,15 @@ videoRouter.post(
   ah((req, res) => {
     const itemId = z.object({ itemId: z.string().min(1) }).parse(req.body).itemId;
     res.status(201).json(setMusicFromLibrary({ id: pid(req), itemId }));
+  })
+);
+
+// POST set the background-music track from a GLOBAL media-library audio item.
+videoRouter.post(
+  '/music/from-global',
+  ah((req, res) => {
+    const itemId = z.object({ itemId: z.string().min(1) }).parse(req.body).itemId;
+    res.status(201).json(setMusicFromGlobal({ id: pid(req), itemId }));
   })
 );
 

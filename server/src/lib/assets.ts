@@ -3,6 +3,7 @@ import { extname, join } from 'node:path';
 // Engine modules (plain JS from the existing CLI pipeline).
 import { searchAssets, searchAsset } from '../../../src/lib/assets.js';
 import { downloadFirstFitting } from '../../../src/lib/asset-cache.js';
+import { getDuration } from '../../../src/lib/ffmpeg.js';
 import { ensureDir, readJsonOr } from './fsx';
 import { CONFIG_DIR, workspaceDir } from './paths';
 import {
@@ -12,9 +13,21 @@ import {
   getAssetsState,
   getLibrary,
   getScenes,
-  setSceneAssets
+  setSceneAssets,
+  updateScene
 } from './store';
+import { GLOBAL_MEDIA_DIR, getMediaLibrary } from './media';
 import type { AssetRef } from './schema';
+
+// Probe a clip's duration (seconds), rounded to 0.1s. Best-effort → 0 on failure.
+async function probeDuration(path: string): Promise<number> {
+  try {
+    const s = await getDuration(path, { video: { ffprobeBin: process.env.FFPROBE_BIN || 'ffprobe' } });
+    return Math.round(s * 10) / 10;
+  } catch {
+    return 0;
+  }
+}
 
 const MAX_CANDIDATES = 12;
 
@@ -70,7 +83,10 @@ function toRef(c: any): AssetRef {
         : [],
     libraryPath: c.libraryPath ?? null,
     file: null,
-    sizeBytes: 0
+    sizeBytes: 0,
+    sourceDurationSec: 0,
+    trimStartSec: 0,
+    trimEndSec: null
   };
 }
 
@@ -131,7 +147,13 @@ export async function selectScene(opts: {
     throw new HttpError(502, `Could not fetch asset: ${err?.message ?? err}`);
   }
 
-  const selected: AssetRef = { ...ref, file, sizeBytes };
+  // For videos, probe the full source length so the trim UI/clamp has a ceiling.
+  let sourceDurationSec = ref.sourceDurationSec ?? 0;
+  if (ref.kind === 'video' && file) {
+    sourceDurationSec = await probeDuration(join(workspaceDir(id), file));
+  }
+
+  const selected: AssetRef = { ...ref, file, sizeBytes, sourceDurationSec };
   return setSceneAssets(id, sceneNumber, { selected });
 }
 
@@ -159,9 +181,82 @@ export async function selectSceneFromLibrary(opts: { id: string; sceneNumber: nu
     downloadUrls: [],
     libraryPath: join(workspaceDir(id), item.file),
     file: null,
-    sizeBytes: 0
+    sizeBytes: 0,
+    sourceDurationSec: 0,
+    trimStartSec: 0,
+    trimEndSec: null
   };
   return selectScene({ id, sceneNumber, ref });
+}
+
+// Assign a GLOBAL media-library image/video to a scene (copies it into the
+// workspace assets). Mirrors selectSceneFromLibrary but resolves from the
+// app-level media library (server/src/lib/media.ts).
+export async function selectSceneFromGlobal(opts: { id: string; sceneNumber: number; itemId: string }) {
+  const { id, sceneNumber, itemId } = opts;
+  const item = getMediaLibrary().find((i) => i.id === itemId);
+  if (!item) throw new HttpError(404, `Global media "${itemId}" not found.`);
+  if (item.kind === 'audio') throw new HttpError(400, 'Audio files can’t be a scene visual — use them as background music.');
+
+  const ref: AssetRef = {
+    origin: 'library',
+    source: 'library',
+    kind: item.kind,
+    label: item.name,
+    width: 0,
+    height: 0,
+    orientation: 'unknown',
+    thumbUrl: '',
+    downloadUrl: null,
+    downloadUrls: [],
+    libraryPath: join(GLOBAL_MEDIA_DIR, item.file),
+    file: null,
+    sizeBytes: 0,
+    sourceDurationSec: item.durationSec ?? 0,
+    trimStartSec: 0,
+    trimEndSec: null
+  };
+  return selectScene({ id, sceneNumber, ref });
+}
+
+// Set/clamp the video trim window on a scene's selected asset AND sync the
+// scene's playback length to the window. Right-bar duration edits also use this
+// (keep trimStart, set trimEnd = trimStart + newDuration → "trim from the end").
+export async function setSceneTrim(opts: {
+  id: string;
+  sceneNumber: number;
+  trimStartSec: number;
+  trimEndSec: number;
+}) {
+  const { id, sceneNumber } = opts;
+  const row = getAssetsState(id).scenes.find((r) => r.sceneNumber === sceneNumber);
+  const selected = row?.selected ?? null;
+  if (!selected || !selected.file) throw new HttpError(400, 'Scene has no selected asset to trim.');
+  if (selected.kind !== 'video') throw new HttpError(400, 'Only video assets can be trimmed.');
+
+  const source =
+    selected.sourceDurationSec && selected.sourceDurationSec > 0
+      ? selected.sourceDurationSec
+      : await probeDuration(join(workspaceDir(id), selected.file));
+
+  let start = Math.max(0, opts.trimStartSec);
+  let end = opts.trimEndSec;
+  if (source > 0) end = Math.min(end, source);
+  // Enforce 0.5s..60s window.
+  end = Math.min(end, start + 60);
+  if (end - start < 0.5) end = start + 0.5;
+  if (source > 0 && end > source) {
+    end = source;
+    start = Math.max(0, end - Math.min(60, end));
+  }
+  start = Math.round(start * 100) / 100;
+  end = Math.round(end * 100) / 100;
+
+  const next: AssetRef = { ...selected, sourceDurationSec: source, trimStartSec: start, trimEndSec: end };
+  setSceneAssets(id, sceneNumber, { selected: next });
+  // Sync scene length to the trimmed window.
+  updateScene(id, sceneNumber, { durationSec: Math.max(0.5, end - start) });
+  return getAssetsState(id);
 }
 
 export function saveSceneMeta(opts: {
@@ -205,7 +300,10 @@ export function uploadScene(opts: {
     downloadUrls: [],
     libraryPath: null,
     file: rel,
-    sizeBytes: buffer.length
+    sizeBytes: buffer.length,
+    sourceDurationSec: 0, // probed lazily on first trim
+    trimStartSec: 0,
+    trimEndSec: null
   };
   return setSceneAssets(id, sceneNumber, { selected });
 }

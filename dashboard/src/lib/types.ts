@@ -98,6 +98,9 @@ export type AssetRef = {
   libraryPath: string | null;
   file: string | null;
   sizeBytes: number;
+  sourceDurationSec: number;
+  trimStartSec: number;
+  trimEndSec: number | null;
 };
 
 export type SceneAssets = {
@@ -178,6 +181,8 @@ export type RenderTimelinePayload = {
 };
 
 export type Manifest = WorkspaceSummary & {
+  category: string | null;
+  hookStyle: string | null;
   script: { currentVersion: number | null; versions: ScriptVersionMeta[] };
   audio: AudioState;
   captions: CaptionsState;
@@ -197,10 +202,17 @@ export type YoutubeState = {
   url: string | null;
   renderId: string | null;
   error?: string;
+  thumbnailWarning?: string;
   uploadedAt?: string;
 };
 
 export type YoutubeStatus = YoutubeState & { configured: boolean };
+
+export type Thumbnail = {
+  file: string | null; // workspace-relative, served at /media/<id>/<file>
+  source: 'asset' | 'import' | 'ai' | 'frame' | null;
+  sizeBytes: number;
+};
 
 export type UploadMeta = {
   platform: string;
@@ -208,8 +220,91 @@ export type UploadMeta = {
   title: string;
   description: string;
   tags: string[];
+  thumbnail: Thumbnail;
   youtube: YoutubeState;
 };
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+export type AnalyticsRange = '7d' | '30d' | '90d' | '365d' | 'lifetime';
+
+export type AnalyticsChannel = {
+  id: string;
+  title: string;
+  thumbnail: string | null;
+  publishedAt: string | null;
+  subscriberCount: number;
+  viewCount: number;
+  videoCount: number;
+};
+
+export type KpiCard = {
+  key: string;
+  label: string;
+  value: number;
+  unit: string | null;
+  delta: number | null; // % change vs previous period; null = no baseline
+};
+
+export type AnalyticsOverview = {
+  range: AnalyticsRange;
+  fetchedAt: string;
+  channel: AnalyticsChannel;
+  cards: KpiCard[];
+};
+
+export type AnalyticsSeriesPoint = {
+  date: string;
+  views: number;
+  subscribers: number;
+  likes: number;
+  comments: number;
+  watchTime: number;
+  engagement: number;
+};
+
+export type VideoAnalyticsRow = {
+  videoId: string;
+  title: string;
+  thumbnail: string | null;
+  publishedAt: string | null;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  watchTime: number;
+  avgViewDuration: number;
+  retention: number;
+  subscribersGained: number;
+  engagementRate: number;
+};
+
+export type TopVideos = {
+  range: AnalyticsRange;
+  fetchedAt: string;
+  byViews: VideoAnalyticsRow[];
+  byRetention: VideoAnalyticsRow[];
+  bySubscribers: VideoAnalyticsRow[];
+  byEngagement: VideoAnalyticsRow[];
+};
+
+export type AnalyticsStatus = {
+  configured: boolean;
+  needsReauth: boolean;
+  hasClient: boolean; // GOOGLE_CLIENT_ID + SECRET present (can run OAuth)
+  redirectUri?: string;
+  message?: string;
+  lastFetched?: string | null;
+};
+
+export type OauthResult = { refreshToken?: string; pending?: boolean };
+
+// Data responses may instead carry a re-auth flag (HTTP 200) — handle in the UI.
+export type NeedsReauth = { needsReauth: true; message: string };
+export type WithReauth<T> = T | NeedsReauth;
+
+export type WorkspaceAnalytics =
+  | { published: false }
+  | { published: true; videoId: string; url: string; video: VideoAnalyticsRow | null };
 
 export type SeoSuggestions = {
   titles: string[];

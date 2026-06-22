@@ -37,3 +37,6 @@ server/node_modules/
 
 # OS noise
 .DS_Store
+
+# Analytics API response cache
+analytics-cache/

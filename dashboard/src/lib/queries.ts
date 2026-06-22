@@ -4,7 +4,7 @@ import {
   useQueryClient
 } from '@tanstack/react-query';
 import { api } from './api';
-import type { Language, MediaKind, Scene, ScriptVersion } from './types';
+import type { AnalyticsRange, Language, MediaKind, Scene, ScriptVersion } from './types';
 
 export const qk = {
   workspaces: ['workspaces'] as const,
@@ -339,6 +339,14 @@ export function useDeleteLibrary(id: string) {
   });
 }
 
+export function useAddLibraryFromGlobal(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => api.libraryFromGlobal(id, itemId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['library', id] })
+  });
+}
+
 export function useSelectSceneFromLibrary(id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -357,6 +365,14 @@ export function useMusicFromLibrary(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (itemId: string) => api.musicFromLibrary(id, itemId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspace(id) })
+  });
+}
+
+export function useMusicFromGlobal(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => api.musicFromGlobal(id, itemId),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspace(id) })
   });
 }
@@ -391,6 +407,51 @@ export function useUpdateScene(id: string) {
       api.updateScene(id, sceneNumber, patch),
     // Update the cache in place so edits don't refetch/clobber in-progress typing.
     onSuccess: (scenes) => qc.setQueryData(qk.scenes(id), scenes)
+  });
+}
+
+export function useAddSceneFromMedia(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      source: 'library' | 'global';
+      itemId: string;
+      durationSec?: number;
+      trimStartSec?: number;
+      trimEndSec?: number;
+    }) => api.addSceneFromMedia(id, payload),
+    onSuccess: ({ scenes, assets }) => {
+      qc.setQueryData(qk.scenes(id), scenes);
+      qc.setQueryData(qk.assets(id), assets);
+      qc.invalidateQueries({ queryKey: qk.workspace(id) });
+      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.stats });
+    }
+  });
+}
+
+export function useRemoveScene(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sceneNumber: number) => api.removeScene(id, sceneNumber),
+    onSuccess: (scenes) => {
+      qc.setQueryData(qk.scenes(id), scenes);
+      qc.invalidateQueries({ queryKey: qk.assets(id) });
+      qc.invalidateQueries({ queryKey: qk.workspace(id) });
+      qc.invalidateQueries({ queryKey: qk.workspaces });
+    }
+  });
+}
+
+export function useTrimSceneAsset(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sceneNumber, trimStartSec, trimEndSec }: { sceneNumber: number; trimStartSec: number; trimEndSec: number }) =>
+      api.trimSceneAsset(id, sceneNumber, trimStartSec, trimEndSec),
+    onSuccess: (assets) => {
+      qc.setQueryData(qk.assets(id), assets);
+      qc.invalidateQueries({ queryKey: qk.scenes(id) });
+    }
   });
 }
 
@@ -552,6 +613,45 @@ export function useGenerateSeo(id: string) {
   return useMutation({ mutationFn: () => api.generateSeo(id) });
 }
 
+function invalidateUpload(qc: ReturnType<typeof useQueryClient>, id: string) {
+  qc.invalidateQueries({ queryKey: ['upload', id] });
+  qc.invalidateQueries({ queryKey: qk.workspace(id) });
+  qc.invalidateQueries({ queryKey: qk.workspaces });
+}
+
+export function useUploadThumbnail(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.uploadThumbnail(id, file),
+    onSuccess: () => invalidateUpload(qc, id)
+  });
+}
+
+export function useThumbnailFromAsset(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ source, itemId }: { source: 'library' | 'global'; itemId: string }) =>
+      api.thumbnailFromAsset(id, source, itemId),
+    onSuccess: () => invalidateUpload(qc, id)
+  });
+}
+
+export function useRemoveThumbnail(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.removeThumbnail(id),
+    onSuccess: () => invalidateUpload(qc, id)
+  });
+}
+
+export function useThumbnailFromFrame(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (atSec?: number) => api.thumbnailFromFrame(id, atSec),
+    onSuccess: () => invalidateUpload(qc, id)
+  });
+}
+
 export function useYoutubeStatus(id: string | undefined) {
   return useQuery({
     queryKey: ['youtube', id ?? ''] as const,
@@ -571,6 +671,64 @@ export function usePublishYoutube(id: string) {
       qc.invalidateQueries({ queryKey: qk.workspaces });
       qc.invalidateQueries({ queryKey: qk.stats });
     }
+  });
+}
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+export function useAnalyticsStatus() {
+  return useQuery({ queryKey: ['analytics', 'status'], queryFn: api.analyticsStatus });
+}
+
+export function useAnalyticsOverview(range: AnalyticsRange, enabled = true) {
+  return useQuery({
+    queryKey: ['analytics', 'overview', range],
+    queryFn: () => api.analyticsOverview(range),
+    enabled
+  });
+}
+
+export function useAnalyticsTimeseries(range: AnalyticsRange, enabled = true) {
+  return useQuery({
+    queryKey: ['analytics', 'timeseries', range],
+    queryFn: () => api.analyticsTimeseries(range),
+    enabled
+  });
+}
+
+export function useAnalyticsVideos(
+  range: AnalyticsRange,
+  sort: string | undefined,
+  search: string | undefined,
+  enabled = true
+) {
+  return useQuery({
+    queryKey: ['analytics', 'videos', range, sort ?? '', search ?? ''],
+    queryFn: () => api.analyticsVideos(range, sort, search),
+    enabled
+  });
+}
+
+export function useAnalyticsTop(range: AnalyticsRange, enabled = true) {
+  return useQuery({
+    queryKey: ['analytics', 'top', range],
+    queryFn: () => api.analyticsTop(range),
+    enabled
+  });
+}
+
+export function useRefreshAnalytics() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.analyticsRefresh(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['analytics'] })
+  });
+}
+
+export function useWorkspaceAnalytics(id: string | undefined) {
+  return useQuery({
+    queryKey: ['analytics', 'workspace', id ?? ''],
+    queryFn: () => api.workspaceAnalytics(id!),
+    enabled: !!id
   });
 }
 

@@ -1,4 +1,4 @@
-import { createReadStream, statSync } from 'node:fs';
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { google } from 'googleapis';
 import { workspaceDir } from './paths';
@@ -16,13 +16,20 @@ export function youtubeConfigured() {
 
 // OAuth2 client wired with the refresh token — the googleapis client mints fresh
 // access tokens automatically, so no interactive consent is needed at runtime.
-function ytClient() {
+// Shared by the uploader (youtube.upload scope) and the analytics module
+// (youtube.readonly + yt-analytics.readonly scopes) — the token's granted scopes
+// determine which calls succeed.
+export function googleAuth() {
   const oauth = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET
   );
   oauth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
-  return google.youtube({ version: 'v3', auth: oauth });
+  return oauth;
+}
+
+function ytClient() {
+  return google.youtube({ version: 'v3', auth: googleAuth() });
 }
 
 function latestCompletedRender(id: string): RenderRecord | null {
@@ -57,7 +64,8 @@ export function startPublish(id: string) {
     videoId: null,
     url: null,
     renderId: render.id,
-    error: undefined
+    error: undefined,
+    thumbnailWarning: undefined
   });
 
   void runPublish(id, render);
@@ -98,12 +106,35 @@ async function runPublish(id: string, render: RenderRecord) {
 
     const videoId = res.data.id;
     if (!videoId) throw new Error('Upload completed but no video ID was returned.');
+
+    // Custom thumbnail is a separate API call (thumbnails.set) made after the
+    // video exists. It needs a verified channel, so failure here is NON-FATAL:
+    // the video is already published — we just surface a warning.
+    let thumbnailWarning: string | undefined;
+    const thumb = up.thumbnail?.file;
+    if (thumb) {
+      const thumbPath = join(workspaceDir(id), thumb);
+      if (existsSync(thumbPath)) {
+        try {
+          await youtube.thumbnails.set({ videoId, media: { body: createReadStream(thumbPath) } });
+        } catch (err: any) {
+          thumbnailWarning =
+            err?.response?.data?.error?.message ||
+            err?.message ||
+            'Custom thumbnail could not be set (your channel may need verification).';
+        }
+      } else {
+        thumbnailWarning = 'Thumbnail file was missing at publish time.';
+      }
+    }
+
     setUploadYoutube(id, {
       status: 'completed',
       progress: 100,
       videoId,
       url: `https://youtu.be/${videoId}`,
-      uploadedAt: new Date().toISOString()
+      uploadedAt: new Date().toISOString(),
+      thumbnailWarning
     });
   } catch (err: any) {
     const msg = err?.response?.data?.error?.message || err?.message || String(err);

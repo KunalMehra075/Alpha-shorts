@@ -45,9 +45,12 @@ export default {
       },
       keyframes: {
         'fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
+        // Used by the centered DialogContent (left/top 50% + translate -50%).
+        // The keyframe must keep that centering offset, otherwise the animated
+        // transform overrides it and the dialog opens off-center then snaps back.
         'slide-up': {
-          from: { opacity: '0', transform: 'translateY(6px)' },
-          to: { opacity: '1', transform: 'translateY(0)' }
+          from: { opacity: '0', transform: 'translate(-50%, calc(-50% + 6px))' },
+          to: { opacity: '1', transform: 'translate(-50%, -50%)' }
         }
       },
       animation: {

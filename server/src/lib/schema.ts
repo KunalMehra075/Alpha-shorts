@@ -124,7 +124,11 @@ export const AssetRef = z.object({
   downloadUrls: z.array(z.string()).default([]), // ordered renditions (best→worst)
   libraryPath: z.string().nullable().default(null),
   file: z.string().nullable().default(null),
-  sizeBytes: z.number().default(0)
+  sizeBytes: z.number().default(0),
+  // Video trim window into the *source* file (seconds). Images ignore these.
+  sourceDurationSec: z.number().default(0),
+  trimStartSec: z.number().default(0),
+  trimEndSec: z.number().nullable().default(null) // null = play to source end
 });
 export type AssetRef = z.infer<typeof AssetRef>;
 
@@ -199,6 +203,10 @@ export const Manifest = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   language: Language.default('en'),
+  // Content-intelligence tags (Analytics Phase 2). AI-classified from the script,
+  // editable. Nullable so existing manifests parse and stay un-classified until run.
+  category: z.string().nullable().default(null),
+  hookStyle: z.string().nullable().default(null),
   stages: z.object({
     script: Stage,
     audio: Stage,
@@ -241,6 +249,15 @@ export const Manifest = z.object({
       title: z.string().default(''),
       description: z.string().default(''),
       tags: z.array(z.string()).default([]),
+      // Custom thumbnail (set on YouTube after the video uploads). File is
+      // workspace-relative (served at /media/<id>/<file>).
+      thumbnail: z
+        .object({
+          file: z.string().nullable().default(null),
+          source: z.enum(['asset', 'import', 'ai', 'frame']).nullable().default(null),
+          sizeBytes: z.number().default(0)
+        })
+        .default({ file: null, source: null, sizeBytes: 0 }),
       // Live YouTube publish job state.
       youtube: z
         .object({
@@ -250,6 +267,9 @@ export const Manifest = z.object({
           url: z.string().nullable().default(null),
           renderId: z.string().nullable().default(null),
           error: z.string().optional(),
+          // Set when the video published but the custom thumbnail couldn't be
+          // applied (e.g. channel not verified) — non-fatal.
+          thumbnailWarning: z.string().optional(),
           uploadedAt: z.string().optional()
         })
         .default({ status: 'idle', progress: 0, videoId: null, url: null, renderId: null })

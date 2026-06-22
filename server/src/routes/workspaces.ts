@@ -18,6 +18,7 @@ import { videoRouter } from './video';
 import { scenesRouter } from './scenes';
 import { uploadRouter } from './upload';
 import { libraryRouter } from './library';
+import { workspaceAnalyticsRouter } from './analytics';
 
 export const workspacesRouter = Router();
 
@@ -85,3 +86,4 @@ workspacesRouter.use('/:id/scenes', scenesRouter);
 workspacesRouter.use('/:id/video', videoRouter);
 workspacesRouter.use('/:id/upload', uploadRouter);
 workspacesRouter.use('/:id/library', libraryRouter);
+workspacesRouter.use('/:id/analytics', workspaceAnalyticsRouter);

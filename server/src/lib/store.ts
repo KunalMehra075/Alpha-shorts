@@ -325,6 +325,62 @@ export function updateScene(id: string, sceneNumber: number, patch: ScenePatch):
   return m.scenes;
 }
 
+// Append a new (manual) scene. Append-only, so existing scene numbers are
+// unchanged and ensureSceneRows can safely add the matching empty asset row.
+export function addScene(
+  id: string,
+  opts: { visualType?: Scene['visualType']; durationSec?: number; spokenLine?: string } = {}
+): Scene[] {
+  const m = readManifest(id);
+  const dur = Math.max(0.5, opts.durationSec ?? 3);
+  const scene: Scene = {
+    scene: m.scenes.length + 1,
+    start: 0,
+    end: dur, // recomputeTimings reflows contiguous start/end
+    spokenLine: opts.spokenLine ?? '',
+    visualType: opts.visualType ?? 'Image',
+    searchKeywords: [],
+    visualDescription: '',
+    imagePrompt: ''
+  };
+  m.scenes.push(scene);
+  m.scenes = recomputeTimings(m.scenes);
+  writeManifest(m);
+  ensureSceneRows(id); // append-only → safely adds the new row
+  return getScenes(id);
+}
+
+// Remove one scene + its asset row + its asset file, then renumber scenes and
+// asset rows together (rows are kept aligned to scenes by ascending number, so
+// we zip by position). `selected.file` paths are left as-is — the render reads
+// the file path directly, not a scene-number-derived name.
+export function removeScene(id: string, sceneNumber: number): Scene[] {
+  const m = readManifest(id);
+  const idx = m.scenes.findIndex((s) => s.scene === sceneNumber);
+  if (idx < 0) throw new HttpError(404, `Scene ${sceneNumber} not found.`);
+
+  const row = m.assets.scenes.find((r) => r.sceneNumber === sceneNumber);
+  if (row?.selected?.file) removePath(join(workspaceDir(id), row.selected.file));
+
+  m.scenes.splice(idx, 1);
+  m.scenes = recomputeTimings(m.scenes); // scene = i + 1
+
+  const remainingRows = m.assets.scenes
+    .filter((r) => r.sceneNumber !== sceneNumber)
+    .sort((a, b) => a.sceneNumber - b.sceneNumber);
+  remainingRows.forEach((r, i) => {
+    r.sceneNumber = i + 1;
+  });
+  m.assets.scenes = remainingRows;
+  m.assets.updatedAt = now();
+
+  const allSelected = remainingRows.length > 0 && remainingRows.every((r) => r.selected);
+  setStage(m, 'assets', remainingRows.length === 0 ? 'not_started' : allSelected ? 'completed' : 'in_progress');
+
+  writeManifest(m);
+  return m.scenes;
+}
+
 // ── Audio ────────────────────────────────────────────────────────────────────
 
 export function audioDir(id: string) {

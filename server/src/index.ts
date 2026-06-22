@@ -12,6 +12,7 @@ import { soundsRouter } from './routes/sounds';
 import { GLOBAL_SOUNDS_DIR } from './lib/sounds';
 import { mediaRouter } from './routes/media';
 import { GLOBAL_MEDIA_DIR } from './lib/media';
+import { analyticsRouter } from './routes/analytics';
 
 // Load the project-root .env (ELEVENLABS_API_KEY, FFPROBE_BIN, …). The server
 // runs from server/, so point dotenv at the root explicitly.
@@ -30,6 +31,7 @@ app.use('/api/workspaces', workspacesRouter);
 app.use('/api/prompt-templates', templatesRouter);
 app.use('/api/sounds', soundsRouter);
 app.use('/api/media-library', mediaRouter);
+app.use('/api/analytics', analyticsRouter);
 
 // Serve workspace media read-only at /media/<workspaceId>/...
 app.use('/media', express.static(WORKSPACES_DIR));

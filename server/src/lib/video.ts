@@ -21,6 +21,7 @@ import {
   setWorkspaceMusic,
   updateRender
 } from './store';
+import { GLOBAL_MEDIA_DIR, getMediaLibrary } from './media';
 import type { RenderRecord } from './schema';
 
 const shortId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
@@ -135,6 +136,19 @@ export function setMusicFromLibrary(opts: { id: string; itemId: string }) {
   return setWorkspaceMusic(id, { file: rel, name: item.name }).music;
 }
 
+// Use a GLOBAL media-library audio item as the background-music track.
+export function setMusicFromGlobal(opts: { id: string; itemId: string }) {
+  const { id, itemId } = opts;
+  const item = getMediaLibrary().find((m) => m.id === itemId);
+  if (!item) throw new HttpError(404, `Global media "${itemId}" not found.`);
+  if (item.kind !== 'audio') throw new HttpError(400, 'Only audio files can be background music.');
+  ensureDir(musicDir(id));
+  const ext = extname(item.file) || '.mp3';
+  const rel = `music/track${ext}`;
+  copyFileSync(join(GLOBAL_MEDIA_DIR, item.file), join(workspaceDir(id), rel));
+  return setWorkspaceMusic(id, { file: rel, name: item.name }).music;
+}
+
 // Build the Remotion composition inputProps from the user's manifest choices +
 // the editor timeline. Stages all referenced files into remotion/public/assets.
 function buildInputProps(id: string, timeline: RenderTimeline) {
@@ -169,7 +183,14 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
       const kind = selected.kind === 'video' ? 'video' : 'image';
       visualType = kind;
       const src = stage(join(workspaceDir(id), selected.file), `scene-${i}`);
-      sceneAssets = [{ type: kind, src }];
+      const asset: { type: string; src: string; trimStartFrames?: number; trimEndFrames?: number } = { type: kind, src };
+      // Video trim window → frame offsets for Remotion's OffthreadVideo.
+      if (kind === 'video' && (selected.trimStartSec || selected.trimEndSec != null)) {
+        const ts = Math.max(0, selected.trimStartSec ?? 0);
+        asset.trimStartFrames = Math.round(ts * fps);
+        if (selected.trimEndSec != null) asset.trimEndFrames = Math.round(selected.trimEndSec * fps);
+      }
+      sceneAssets = [asset];
       effect = mapEffect(tl?.effect ?? '', kind);
     } else {
       animationKind = inferAnimationKind(sc.searchKeywords ?? [], sc.spokenLine ?? '');
