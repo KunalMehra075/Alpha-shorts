@@ -30,6 +30,7 @@ remotion/public/*
 
 # Dashboard (web + server) build + data
 projects/*
+sounds/*.mp3
 !projects/.gitkeep
 dashboard/node_modules/
 dashboard/dist/
