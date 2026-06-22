@@ -770,32 +770,19 @@ function SceneInspector({
           ) : (
             <div className="grid grid-cols-3 gap-2">
               {candidates.map((c, i) => {
-                const t = c.thumbUrl || placeholderDataUri(`${sceneNumber}-${i}`, { ratio: '9:16' });
                 const isSel =
                   !!selected &&
                   (selected.downloadUrl === c.downloadUrl || selected.libraryPath === c.libraryPath) &&
                   selected.label === c.label;
                 return (
-                  <button
+                  <SuggestionCard
                     key={`${c.source}-${i}`}
-                    onClick={() => onSelect(c)}
-                    disabled={selecting}
-                    className={cn(
-                      'group relative aspect-[9/16] overflow-hidden rounded-lg ring-1 transition disabled:opacity-60',
-                      isSel ? 'ring-2 ring-accent' : 'ring-border hover:ring-accent/50'
-                    )}
-                    title={`${c.kind} · ${c.source}`}
-                  >
-                    <img src={t} alt="" className="size-full object-cover" />
-                    {c.kind === 'video' && (
-                      <span className="absolute bottom-1 left-1 rounded bg-black/60 p-0.5">
-                        <Play className="size-3 text-white" />
-                      </span>
-                    )}
-                    <span className="absolute right-1 top-1 rounded bg-black/55 px-1 text-[9px] uppercase text-white">
-                      {c.source}
-                    </span>
-                  </button>
+                    c={c}
+                    poster={c.thumbUrl || placeholderDataUri(`${sceneNumber}-${i}`, { ratio: '9:16' })}
+                    isSel={isSel}
+                    selecting={selecting}
+                    onSelect={onSelect}
+                  />
                 );
               })}
             </div>
@@ -803,6 +790,73 @@ function SceneInspector({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// One suggested-asset tile. Videos play (with audio) on hover, restoring their
+// poster on leave; images are static.
+function SuggestionCard({
+  c,
+  poster,
+  isSel,
+  selecting,
+  onSelect
+}: {
+  c: AssetRef;
+  poster: string;
+  isSel: boolean;
+  selecting: boolean;
+  onSelect: (c: AssetRef) => void;
+}) {
+  const vidRef = useRef<HTMLVideoElement>(null);
+  const isVideo = c.kind === 'video' && !!c.downloadUrl;
+  const enter = () => {
+    const v = vidRef.current;
+    if (!v) return;
+    v.muted = false;
+    v.currentTime = 0;
+    v.play().catch(() => {});
+  };
+  const leave = () => {
+    const v = vidRef.current;
+    if (!v) return;
+    v.pause();
+    v.load(); // restore the poster frame
+  };
+  return (
+    <button
+      onClick={() => onSelect(c)}
+      disabled={selecting}
+      onMouseEnter={isVideo ? enter : undefined}
+      onMouseLeave={isVideo ? leave : undefined}
+      className={cn(
+        'group relative aspect-[9/16] overflow-hidden rounded-lg ring-1 transition disabled:opacity-60',
+        isSel ? 'ring-2 ring-accent' : 'ring-border hover:ring-accent/50'
+      )}
+      title={`${c.kind} · ${c.source}`}
+    >
+      {isVideo ? (
+        <video
+          ref={vidRef}
+          src={c.downloadUrl!}
+          poster={poster}
+          loop
+          playsInline
+          preload="none"
+          className="size-full object-cover"
+        />
+      ) : (
+        <img src={poster} alt="" className="size-full object-cover" />
+      )}
+      {c.kind === 'video' && (
+        <span className="absolute bottom-1 left-1 rounded bg-black/60 p-0.5 group-hover:opacity-0">
+          <Play className="size-3 text-white" />
+        </span>
+      )}
+      <span className="absolute right-1 top-1 rounded bg-black/55 px-1 text-[9px] uppercase text-white">
+        {c.source}
+      </span>
+    </button>
   );
 }
 

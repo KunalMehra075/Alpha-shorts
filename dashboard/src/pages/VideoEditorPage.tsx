@@ -2031,8 +2031,8 @@ function Timeline({
                                 : 'border-sky-500/40 bg-sky-500/15'
                             )}
                           >
-                            <Shapes className="size-2.5 shrink-0 text-sky-300" />
-                            <span className="truncate text-sky-50">{el.name}</span>
+                            <Shapes className="size-2.5 shrink-0 text-sky-600 dark:text-sky-300" />
+                            <span className="truncate text-sky-800 dark:text-sky-50">{el.name}</span>
                           </div>
                         );
                       })}
@@ -2135,8 +2135,8 @@ function Timeline({
                           : 'border-emerald-500/40 bg-emerald-500/15'
                       )}
                     >
-                      <Music className="size-2.5 shrink-0 text-emerald-300" />
-                      <span className="truncate text-emerald-50">{p.name}</span>
+                      <Music className="size-2.5 shrink-0 text-emerald-600 dark:text-emerald-300" />
+                      <span className="truncate text-emerald-800 dark:text-emerald-50">{p.name}</span>
                     </div>
                   );
                 })}

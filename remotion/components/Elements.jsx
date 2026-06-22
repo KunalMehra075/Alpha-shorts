@@ -16,7 +16,10 @@ import { Gif } from '@remotion/gif';
 const ElementMedia = ({ el }) => {
   const style = { width: '100%', height: 'auto', display: 'block' };
   if (el.kind === 'gif') return <Gif src={staticFile(el.src)} fit="contain" style={style} />;
-  if (el.kind === 'video') return <OffthreadVideo src={staticFile(el.src)} muted={el.muted !== false} loop style={style} />;
+  // `transparent` extracts frames as PNG (not JPEG) so the keyed alpha channel
+  // survives — without it the transparent areas composite onto black.
+  if (el.kind === 'video')
+    return <OffthreadVideo src={staticFile(el.src)} muted={el.muted !== false} loop transparent style={style} />;
   return <Img src={staticFile(el.src)} style={style} />;
 };
 
