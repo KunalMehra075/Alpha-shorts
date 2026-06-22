@@ -3,7 +3,7 @@ import { getCaptions, getCurrentScript, readManifest } from './store';
 
 const generator = defaultScriptGenerator();
 
-// Generate SEO metadata (titles/descriptions/tags) from the workspace's topic +
+// Generate SEO metadata (titles/descriptions/tags) from the project's topic +
 // narration (script if present, else the caption transcript). Reuses the LLM
 // strategy chain (DeepSeek → OpenAI → mock).
 export async function generateSeo(id: string) {

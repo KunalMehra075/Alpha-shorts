@@ -35,7 +35,7 @@ libraryRouter.post(
   })
 );
 
-// POST copy a GLOBAL media-library item into this workspace's library.
+// POST copy a GLOBAL media-library item into this project's library.
 libraryRouter.post(
   '/from-global',
   ah((req, res) => {
@@ -44,7 +44,7 @@ libraryRouter.post(
   })
 );
 
-// POST generate an AI image and add it to this workspace's library.
+// POST generate an AI image and add it to this project's library.
 libraryRouter.post(
   '/generate',
   ah(async (req, res) => {

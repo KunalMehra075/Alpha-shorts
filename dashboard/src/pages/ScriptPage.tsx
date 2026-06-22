@@ -37,10 +37,10 @@ import {
   useScriptVersions,
   useTemplates
 } from '@/lib/queries';
-import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
+import { useProjectCtx } from '@/layouts/ProjectLayout';
 
 export function ScriptPage() {
-  const { workspace, id } = useWorkspaceCtx();
+  const { project, id } = useProjectCtx();
   const navigate = useNavigate();
   const { data: script, isLoading } = useScript(id);
 
@@ -90,7 +90,7 @@ export function ScriptPage() {
 
   const runGenerate = async () => {
     try {
-      const sv = await generate.mutateAsync({ topic, prompt, language: workspace.language });
+      const sv = await generate.mutateAsync({ topic, prompt, language: project.language });
       toast.success(
         sv.mock ? 'Script generated (mock fallback)' : `Script generated via ${sv.provider}`
       );
@@ -120,13 +120,13 @@ export function ScriptPage() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setHistoryOpen(true)}>
             <History className="size-4" /> Versions
-            {workspace.script.versions.length > 0 && (
+            {project.script.versions.length > 0 && (
               <Badge variant="default" className="ml-1">
-                {workspace.script.versions.length}
+                {project.script.versions.length}
               </Badge>
             )}
           </Button>
-          <StatusBadge status={workspace.stages.script.status} />
+          <StatusBadge status={project.stages.script.status} />
         </div>
       </div>
 
@@ -379,7 +379,7 @@ function SaveTemplateDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Save as template</DialogTitle>
-          <DialogDescription>Reuse this prompt across workspaces.</DialogDescription>
+          <DialogDescription>Reuse this prompt across projects.</DialogDescription>
         </DialogHeader>
         <Input
           autoFocus

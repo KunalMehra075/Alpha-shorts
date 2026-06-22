@@ -10,23 +10,23 @@ import {
   DeleteDialog,
   RenameDialog,
   StageDots,
-  WorkspaceCard,
-  WorkspaceMenu
-} from '@/components/WorkspaceUI';
+  ProjectCard,
+  ProjectMenu
+} from '@/components/ProjectUI';
 import { cn, relativeTime } from '@/lib/utils';
-import { useDuplicateWorkspace, useWorkspaces } from '@/lib/queries';
-import type { WorkspaceSummary } from '@/lib/types';
+import { useDuplicateProject, useProjects } from '@/lib/queries';
+import type { ProjectSummary } from '@/lib/types';
 
 type View = 'table' | 'card';
-const VIEW_KEY = 'shorts-workspaces-view';
+const VIEW_KEY = 'shorts-projects-view';
 
-export function WorkspacesPage() {
+export function ProjectsPage() {
   const navigate = useNavigate();
-  const { data: workspaces, isLoading } = useWorkspaces();
+  const { data: projects, isLoading } = useProjects();
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<WorkspaceSummary | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<WorkspaceSummary | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
   const [view, setView] = useState<View>(() => {
     try {
       return localStorage.getItem(VIEW_KEY) === 'card' ? 'card' : 'table';
@@ -44,10 +44,10 @@ export function WorkspacesPage() {
   }, [view]);
 
   const counts = useMemo(() => {
-    const list = workspaces ?? [];
+    const list = projects ?? [];
     const completed = list.filter((w) => w.stages.upload.status === 'completed').length;
     return { total: list.length, completed, pending: list.length - completed };
-  }, [workspaces]);
+  }, [projects]);
 
   const open = (id: string) => navigate(`/w/${id}/script`);
 
@@ -56,11 +56,11 @@ export function WorkspacesPage() {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Workspaces</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight">Projects</h1>
           <p className="mt-1 text-muted-foreground">Every short video project lives here.</p>
         </div>
         <Button variant="primary" size="lg" onClick={() => setCreateOpen(true)}>
-          <Plus className="size-4" /> New Workspace
+          <Plus className="size-4" /> New Project
         </Button>
       </div>
 
@@ -73,7 +73,7 @@ export function WorkspacesPage() {
 
       {/* Toolbar */}
       <div className="mb-4 mt-9 flex items-center justify-between">
-        <h2 className="text-lg font-bold">All workspaces</h2>
+        <h2 className="text-lg font-bold">All projects</h2>
         <div className="inline-flex items-center rounded-lg border border-border p-0.5">
           <ViewButton active={view === 'table'} onClick={() => setView('table')} icon={<TableIcon className="size-4" />} label="Table" />
           <ViewButton active={view === 'card'} onClick={() => setView('card')} icon={<LayoutGrid className="size-4" />} label="Cards" />
@@ -87,12 +87,12 @@ export function WorkspacesPage() {
             <Card key={i} className="h-36 animate-pulse bg-muted/40" />
           ))}
         </div>
-      ) : (workspaces?.length ?? 0) === 0 ? (
+      ) : (projects?.length ?? 0) === 0 ? (
         <EmptyState onCreate={() => setCreateOpen(true)} />
       ) : view === 'card' ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {workspaces!.map((w) => (
-            <WorkspaceCard
+          {projects!.map((w) => (
+            <ProjectCard
               key={w.id}
               w={w}
               onOpen={() => open(w.id)}
@@ -102,8 +102,8 @@ export function WorkspacesPage() {
           ))}
         </div>
       ) : (
-        <WorkspaceTable
-          rows={workspaces!}
+        <ProjectTable
+          rows={projects!}
           onOpen={open}
           onRename={setRenameTarget}
           onDelete={setDeleteTarget}
@@ -142,18 +142,18 @@ function ViewButton({
   );
 }
 
-function WorkspaceTable({
+function ProjectTable({
   rows,
   onOpen,
   onRename,
   onDelete
 }: {
-  rows: WorkspaceSummary[];
+  rows: ProjectSummary[];
   onOpen: (id: string) => void;
-  onRename: (w: WorkspaceSummary) => void;
-  onDelete: (w: WorkspaceSummary) => void;
+  onRename: (w: ProjectSummary) => void;
+  onDelete: (w: ProjectSummary) => void;
 }) {
-  const duplicate = useDuplicateWorkspace();
+  const duplicate = useDuplicateProject();
   return (
     <Card>
       <CardContent className="p-0">
@@ -181,14 +181,14 @@ function WorkspaceTable({
                 </td>
                 <td className="px-3 py-3 text-muted-foreground">{relativeTime(w.updatedAt)}</td>
                 <td className="px-3 py-3 text-right">
-                  <WorkspaceMenu
+                  <ProjectMenu
                     onOpen={() => onOpen(w.id)}
                     onRename={() => onRename(w)}
                     onDelete={() => onDelete(w)}
                     onDuplicate={() =>
                       toast.promise(duplicate.mutateAsync(w.id), {
                         loading: 'Duplicating…',
-                        success: 'Workspace duplicated',
+                        success: 'Project duplicated',
                         error: (e) => String(e.message ?? e)
                       })
                     }
@@ -211,13 +211,13 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
           <FilmIcon className="size-7 text-muted-foreground" />
         </div>
         <div>
-          <p className="text-base font-semibold">No workspaces yet</p>
+          <p className="text-base font-semibold">No projects yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Create your first short video project to get started.
           </p>
         </div>
         <Button variant="primary" onClick={onCreate}>
-          <Plus className="size-4" /> New Workspace
+          <Plus className="size-4" /> New Project
         </Button>
       </CardContent>
     </Card>

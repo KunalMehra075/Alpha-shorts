@@ -25,15 +25,15 @@ import {
 import { StatusDot } from '@/components/StatusBadge';
 import { relativeTime } from '@/lib/utils';
 import {
-  useCreateWorkspace,
-  useDeleteWorkspace,
-  useDuplicateWorkspace,
-  useUpdateWorkspace
+  useCreateProject,
+  useDeleteProject,
+  useDuplicateProject,
+  useUpdateProject
 } from '@/lib/queries';
-import { STAGE_TABS, type Language, type WorkspaceSummary } from '@/lib/types';
+import { STAGE_TABS, type Language, type ProjectSummary } from '@/lib/types';
 
 // Shared row of stage progress dots used by both card and table views.
-export function StageDots({ w }: { w: WorkspaceSummary }) {
+export function StageDots({ w }: { w: ProjectSummary }) {
   return (
     <div className="flex items-center gap-1.5">
       {STAGE_TABS.map((t) => (
@@ -46,7 +46,7 @@ export function StageDots({ w }: { w: WorkspaceSummary }) {
 }
 
 // Action menu reused by card and table rows.
-export function WorkspaceMenu({
+export function ProjectMenu({
   onOpen,
   onRename,
   onDelete,
@@ -83,18 +83,18 @@ export function WorkspaceMenu({
   );
 }
 
-export function WorkspaceCard({
+export function ProjectCard({
   w,
   onOpen,
   onRename,
   onDelete
 }: {
-  w: WorkspaceSummary;
+  w: ProjectSummary;
   onOpen: () => void;
   onRename: () => void;
   onDelete: () => void;
 }) {
-  const duplicate = useDuplicateWorkspace();
+  const duplicate = useDuplicateProject();
   return (
     <Card className="group transition-colors hover:border-accent/40">
       <CardContent className="flex h-full flex-col gap-4 p-5">
@@ -103,14 +103,14 @@ export function WorkspaceCard({
             <h3 className="truncate text-base font-semibold group-hover:text-accent">{w.name}</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">Updated {relativeTime(w.updatedAt)}</p>
           </button>
-          <WorkspaceMenu
+          <ProjectMenu
             onOpen={onOpen}
             onRename={onRename}
             onDelete={onDelete}
             onDuplicate={() =>
               toast.promise(duplicate.mutateAsync(w.id), {
                 loading: 'Duplicating…',
-                success: 'Workspace duplicated',
+                success: 'Project duplicated',
                 error: (e) => String(e.message ?? e)
               })
             }
@@ -125,7 +125,7 @@ export function WorkspaceCard({
         </div>
 
         <Button variant="secondary" size="sm" onClick={onOpen}>
-          Open workspace
+          Open project
         </Button>
       </CardContent>
     </Card>
@@ -142,7 +142,7 @@ export function CreateDialog({
   onOpenChange: (o: boolean) => void;
 }) {
   const navigate = useNavigate();
-  const create = useCreateWorkspace();
+  const create = useCreateProject();
   const [name, setName] = useState('');
   const [language, setLanguage] = useState<Language>('en');
 
@@ -150,7 +150,7 @@ export function CreateDialog({
     if (!name.trim()) return;
     try {
       const ws = await create.mutateAsync({ name: name.trim(), language });
-      toast.success('Workspace created');
+      toast.success('Project created');
       onOpenChange(false);
       setName('');
       setLanguage('en');
@@ -164,8 +164,8 @@ export function CreateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New Workspace</DialogTitle>
-          <DialogDescription>One workspace = one short video project.</DialogDescription>
+          <DialogTitle>New Project</DialogTitle>
+          <DialogDescription>One project = one short video project.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
           <div className="grid gap-2">
@@ -205,10 +205,10 @@ export function RenameDialog({
   target,
   onClose
 }: {
-  target: WorkspaceSummary | null;
+  target: ProjectSummary | null;
   onClose: () => void;
 }) {
-  const update = useUpdateWorkspace();
+  const update = useUpdateProject();
   const [name, setName] = useState('');
 
   useEffect(() => {
@@ -230,7 +230,7 @@ export function RenameDialog({
     <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Rename workspace</DialogTitle>
+          <DialogTitle>Rename project</DialogTitle>
         </DialogHeader>
         <Input
           autoFocus
@@ -255,15 +255,15 @@ export function DeleteDialog({
   target,
   onClose
 }: {
-  target: WorkspaceSummary | null;
+  target: ProjectSummary | null;
   onClose: () => void;
 }) {
-  const del = useDeleteWorkspace();
+  const del = useDeleteProject();
   const submit = async () => {
     if (!target) return;
     try {
       await del.mutateAsync(target.id);
-      toast.success('Workspace deleted');
+      toast.success('Project deleted');
       onClose();
     } catch (e: any) {
       toast.error(String(e.message ?? e));
@@ -273,7 +273,7 @@ export function DeleteDialog({
     <Dialog open={!!target} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete workspace?</DialogTitle>
+          <DialogTitle>Delete project?</DialogTitle>
           <DialogDescription>
             “{target?.name}” and all its generated data will be permanently removed. This cannot be
             undone.

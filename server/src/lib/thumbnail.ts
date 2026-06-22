@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { getDuration } from '../../../src/lib/ffmpeg.js';
 import { ensureDir, removePath } from './fsx';
-import { workspaceDir } from './paths';
+import { projectDir } from './paths';
 import { HttpError, getRenders, readManifest, setUpload } from './store';
 import { GLOBAL_MEDIA_DIR, getMediaLibrary } from './media';
 import { defaultImageGenerator } from './image';
@@ -12,11 +12,11 @@ import { defaultImageGenerator } from './image';
 const MAX_BYTES = 2 * 1024 * 1024;
 const IMG = /\.(jpe?g|png)$/i;
 
-// The thumbnail always lives at workspaces/<id>/thumbnail.<ext>. Clear any
+// The thumbnail always lives at projects/<id>/thumbnail.<ext>. Clear any
 // existing one (extension may differ) before writing a new file.
 function clearThumbFile(id: string) {
   for (const ext of ['.jpg', '.jpeg', '.png']) {
-    removePath(join(workspaceDir(id), `thumbnail${ext}`));
+    removePath(join(projectDir(id), `thumbnail${ext}`));
   }
 }
 
@@ -28,21 +28,21 @@ function normalizedExt(file: string): string {
 // Import a thumbnail uploaded from the user's computer.
 export function setThumbnailFromUpload(opts: { id: string; buffer: Buffer; originalName: string }) {
   const { id, buffer, originalName } = opts;
-  readManifest(id); // 404 if the workspace is missing
+  readManifest(id); // 404 if the project is missing
   if (!buffer?.length) throw new HttpError(400, 'Empty file.');
   if (!IMG.test(originalName)) throw new HttpError(400, 'Thumbnail must be a JPG or PNG image.');
   if (buffer.length > MAX_BYTES) {
     throw new HttpError(400, 'Thumbnail must be 2 MB or smaller (YouTube limit).');
   }
-  ensureDir(workspaceDir(id));
+  ensureDir(projectDir(id));
   clearThumbFile(id);
   const ext = normalizedExt(originalName);
   const rel = `thumbnail${ext}`;
-  writeFileSync(join(workspaceDir(id), rel), buffer);
+  writeFileSync(join(projectDir(id), rel), buffer);
   return setUpload(id, { thumbnail: { file: rel, source: 'import', sizeBytes: buffer.length } });
 }
 
-// Copy a thumbnail from the workspace library or the global media library.
+// Copy a thumbnail from the project library or the global media library.
 export function setThumbnailFromAsset(opts: {
   id: string;
   source: 'library' | 'global';
@@ -62,7 +62,7 @@ export function setThumbnailFromAsset(opts: {
     const item = m.library.find((x) => x.id === itemId);
     if (!item) throw new HttpError(404, `Library item "${itemId}" not found.`);
     if (item.kind !== 'image') throw new HttpError(400, 'Thumbnail must be an image.');
-    srcPath = join(workspaceDir(id), item.file);
+    srcPath = join(projectDir(id), item.file);
     name = item.file;
   }
 
@@ -71,11 +71,11 @@ export function setThumbnailFromAsset(opts: {
   const size = statSync(srcPath).size;
   if (size > MAX_BYTES) throw new HttpError(400, 'Thumbnail must be 2 MB or smaller (YouTube limit).');
 
-  ensureDir(workspaceDir(id));
+  ensureDir(projectDir(id));
   clearThumbFile(id);
   const ext = normalizedExt(name);
   const rel = `thumbnail${ext}`;
-  copyFileSync(srcPath, join(workspaceDir(id), rel));
+  copyFileSync(srcPath, join(projectDir(id), rel));
   return setUpload(id, { thumbnail: { file: rel, source: 'asset', sizeBytes: size } });
 }
 
@@ -115,7 +115,7 @@ export async function setThumbnailFromFrame(opts: { id: string; atSec?: number }
   if (!render?.file) {
     throw new HttpError(400, 'No completed render to grab a frame from — render a video first.');
   }
-  const input = join(workspaceDir(id), render.file);
+  const input = join(projectDir(id), render.file);
   if (!existsSync(input)) throw new HttpError(404, 'Rendered video file is missing.');
 
   let duration = 0;
@@ -137,10 +137,10 @@ export async function setThumbnailFromFrame(opts: { id: string; atSec?: number }
   }
   at = Math.max(0, Math.min(at, Math.max(0, duration - 0.05)));
 
-  ensureDir(workspaceDir(id));
+  ensureDir(projectDir(id));
   clearThumbFile(id);
   const rel = 'thumbnail.jpg';
-  const out = join(workspaceDir(id), rel);
+  const out = join(projectDir(id), rel);
   // Accurate seek: fast input-seek to a few seconds before the target, then a
   // precise output-seek to land exactly on `at` (so the saved frame matches the
   // scrubber preview). One frame, long edge capped at 1280px.
@@ -180,13 +180,13 @@ export async function setThumbnailFromGenerated(opts: { id: string; prompt: stri
     throw new HttpError(502, err?.message || 'Image generation failed.');
   }
 
-  ensureDir(workspaceDir(id));
+  ensureDir(projectDir(id));
   clearThumbFile(id);
   const srcExt = /jpe?g/.test(result.mime) ? '.jpg' : '.png';
-  const srcPath = join(workspaceDir(id), `thumbnail-src${srcExt}`);
+  const srcPath = join(projectDir(id), `thumbnail-src${srcExt}`);
   writeFileSync(srcPath, result.buffer);
   const rel = 'thumbnail.jpg';
-  const out = join(workspaceDir(id), rel);
+  const out = join(projectDir(id), rel);
   try {
     await runFfmpeg([
       '-i',

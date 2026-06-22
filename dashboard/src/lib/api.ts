@@ -8,7 +8,7 @@ import type {
   TopVideos,
   VideoAnalyticsRow,
   WithReauth,
-  WorkspaceAnalytics,
+  ProjectAnalytics,
   AssetRef,
   AssetsState,
   AudioState,
@@ -39,7 +39,7 @@ import type {
   ScriptVersionMeta,
   Stats,
   Voice,
-  WorkspaceSummary
+  ProjectSummary
 } from './types';
 
 const BASE = '/api';
@@ -64,28 +64,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  // workspaces
-  listWorkspaces: () => request<WorkspaceSummary[]>('/workspaces'),
-  getWorkspace: (id: string) => request<Manifest>(`/workspaces/${id}`),
-  createWorkspace: (name: string, language?: Language) =>
-    request<Manifest>('/workspaces', {
+  // projects
+  listProjects: () => request<ProjectSummary[]>('/projects'),
+  getProject: (id: string) => request<Manifest>(`/projects/${id}`),
+  createProject: (name: string, language?: Language) =>
+    request<Manifest>('/projects', {
       method: 'POST',
       body: JSON.stringify({ name, language })
     }),
-  updateWorkspace: (id: string, patch: { name?: string; language?: Language }) =>
-    request<Manifest>(`/workspaces/${id}`, {
+  updateProject: (id: string, patch: { name?: string; language?: Language }) =>
+    request<Manifest>(`/projects/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(patch)
     }),
-  duplicateWorkspace: (id: string) =>
-    request<Manifest>(`/workspaces/${id}/duplicate`, { method: 'POST' }),
-  deleteWorkspace: (id: string) =>
-    request<void>(`/workspaces/${id}`, { method: 'DELETE' }),
+  duplicateProject: (id: string) =>
+    request<Manifest>(`/projects/${id}/duplicate`, { method: 'POST' }),
+  deleteProject: (id: string) =>
+    request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
   // script
-  getScript: (id: string) => request<ScriptVersion | null>(`/workspaces/${id}/script`),
+  getScript: (id: string) => request<ScriptVersion | null>(`/projects/${id}/script`),
   saveScript: (id: string, data: Partial<ScriptVersion>) =>
-    request<ScriptVersion>(`/workspaces/${id}/script`, {
+    request<ScriptVersion>(`/projects/${id}/script`, {
       method: 'PUT',
       body: JSON.stringify(data)
     }),
@@ -93,41 +93,41 @@ export const api = {
     id: string,
     payload: { topic: string; prompt: string; language?: string }
   ) =>
-    request<ScriptVersion>(`/workspaces/${id}/script/generate`, {
+    request<ScriptVersion>(`/projects/${id}/script/generate`, {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
   listScriptVersions: (id: string) =>
-    request<ScriptVersionMeta[]>(`/workspaces/${id}/script/versions`),
+    request<ScriptVersionMeta[]>(`/projects/${id}/script/versions`),
   restoreScript: (id: string, version: number) =>
-    request<ScriptVersion>(`/workspaces/${id}/script/restore`, {
+    request<ScriptVersion>(`/projects/${id}/script/restore`, {
       method: 'POST',
       body: JSON.stringify({ version })
     }),
 
   // audio
   listVoices: () => request<Voice[]>('/voices'),
-  getAudio: (id: string) => request<AudioState>(`/workspaces/${id}/audio`),
+  getAudio: (id: string) => request<AudioState>(`/projects/${id}/audio`),
   generateAudio: (
     id: string,
     body: { voiceId: string; stability?: number; similarity?: number; speed?: number }
   ) =>
-    request<AudioVersion>(`/workspaces/${id}/audio/generate`, {
+    request<AudioVersion>(`/projects/${id}/audio/generate`, {
       method: 'POST',
       body: JSON.stringify(body)
     }),
   selectAudio: (id: string, version: number) =>
-    request<Manifest>(`/workspaces/${id}/audio/select`, {
+    request<Manifest>(`/projects/${id}/audio/select`, {
       method: 'POST',
       body: JSON.stringify({ version })
     }),
   deleteAudio: (id: string, version: number) =>
-    request<Manifest>(`/workspaces/${id}/audio/${version}`, { method: 'DELETE' }),
+    request<Manifest>(`/projects/${id}/audio/${version}`, { method: 'DELETE' }),
   uploadAudio: async (id: string, file: File, speed = 1) => {
     const fd = new FormData();
     fd.append('file', file);
     fd.append('speed', String(speed));
-    const res = await fetch(`/api/workspaces/${id}/audio/upload`, {
+    const res = await fetch(`/api/projects/${id}/audio/upload`, {
       method: 'POST',
       body: fd
     });
@@ -145,29 +145,29 @@ export const api = {
   },
 
   // captions
-  getCaptions: (id: string) => request<CaptionsState>(`/workspaces/${id}/caption`),
+  getCaptions: (id: string) => request<CaptionsState>(`/projects/${id}/caption`),
   generateCaptions: (
     id: string,
     body: { language?: string; settings?: CaptionSettings }
   ) =>
-    request<CaptionsState>(`/workspaces/${id}/caption/generate`, {
+    request<CaptionsState>(`/projects/${id}/caption/generate`, {
       method: 'POST',
       body: JSON.stringify(body)
     }),
   saveCaptions: (id: string, body: { settings: CaptionSettings; lines: CaptionLine[] }) =>
-    request<CaptionsState>(`/workspaces/${id}/caption`, {
+    request<CaptionsState>(`/projects/${id}/caption`, {
       method: 'PUT',
       body: JSON.stringify(body)
     }),
   renderCaptionOverlay: (id: string) =>
-    request<CaptionOverlay>(`/workspaces/${id}/caption/render`, { method: 'POST' }),
+    request<CaptionOverlay>(`/projects/${id}/caption/render`, { method: 'POST' }),
 
   // media library
-  getLibrary: (id: string) => request<LibraryItem[]>(`/workspaces/${id}/library`),
+  getLibrary: (id: string) => request<LibraryItem[]>(`/projects/${id}/library`),
   uploadLibrary: async (id: string, file: File) => {
     const fd = new FormData();
     fd.append('file', file);
-    const res = await fetch(`/api/workspaces/${id}/library`, { method: 'POST', body: fd });
+    const res = await fetch(`/api/projects/${id}/library`, { method: 'POST', body: fd });
     if (!res.ok) {
       let msg = `${res.status} ${res.statusText}`;
       try {
@@ -181,24 +181,24 @@ export const api = {
     return res.json() as Promise<LibraryItem>;
   },
   deleteLibrary: (id: string, itemId: string) =>
-    request<LibraryItem[]>(`/workspaces/${id}/library/${itemId}`, { method: 'DELETE' }),
+    request<LibraryItem[]>(`/projects/${id}/library/${itemId}`, { method: 'DELETE' }),
   libraryFromGlobal: (id: string, itemId: string) =>
-    request<LibraryItem>(`/workspaces/${id}/library/from-global`, {
+    request<LibraryItem>(`/projects/${id}/library/from-global`, {
       method: 'POST',
       body: JSON.stringify({ itemId })
     }),
   selectSceneFromLibrary: (id: string, sceneNumber: number, itemId: string) =>
-    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/select-library`, {
+    request<AssetsState>(`/projects/${id}/assets/${sceneNumber}/select-library`, {
       method: 'POST',
       body: JSON.stringify({ itemId })
     }),
   musicFromLibrary: (id: string, itemId: string) =>
-    request<MusicTrack>(`/workspaces/${id}/video/music/from-library`, {
+    request<MusicTrack>(`/projects/${id}/video/music/from-library`, {
       method: 'POST',
       body: JSON.stringify({ itemId })
     }),
   musicFromGlobal: (id: string, itemId: string) =>
-    request<MusicTrack>(`/workspaces/${id}/video/music/from-global`, {
+    request<MusicTrack>(`/projects/${id}/video/music/from-global`, {
       method: 'POST',
       body: JSON.stringify({ itemId })
     }),
@@ -245,26 +245,26 @@ export const api = {
   deleteMedia: (id: string) => request<MediaItem[]>(`/media-library/${id}`, { method: 'DELETE' }),
 
   // per-video sound placements
-  getVideoSounds: (id: string) => request<SoundPlacement[]>(`/workspaces/${id}/video/sounds`),
+  getVideoSounds: (id: string) => request<SoundPlacement[]>(`/projects/${id}/video/sounds`),
   placeSound: (id: string, soundId: string, atSec: number) =>
-    request<SoundPlacement>(`/workspaces/${id}/video/sounds`, {
+    request<SoundPlacement>(`/projects/${id}/video/sounds`, {
       method: 'POST',
       body: JSON.stringify({ soundId, atSec })
     }),
   updatePlacement: (id: string, placementId: string, patch: { atSec?: number; volume?: number }) =>
-    request<SoundPlacement[]>(`/workspaces/${id}/video/sounds/${placementId}`, {
+    request<SoundPlacement[]>(`/projects/${id}/video/sounds/${placementId}`, {
       method: 'PUT',
       body: JSON.stringify(patch)
     }),
   removePlacement: (id: string, placementId: string) =>
-    request<SoundPlacement[]>(`/workspaces/${id}/video/sounds/${placementId}`, { method: 'DELETE' }),
+    request<SoundPlacement[]>(`/projects/${id}/video/sounds/${placementId}`, { method: 'DELETE' }),
 
   // scenes (canonical breakdown)
-  getScenes: (id: string) => request<Scene[]>(`/workspaces/${id}/scenes`),
+  getScenes: (id: string) => request<Scene[]>(`/projects/${id}/scenes`),
   buildBreakdown: (id: string) =>
-    request<BreakdownResult>(`/workspaces/${id}/scenes/breakdown`, { method: 'POST' }),
+    request<BreakdownResult>(`/projects/${id}/scenes/breakdown`, { method: 'POST' }),
   updateScene: (id: string, sceneNumber: number, patch: ScenePatch) =>
-    request<Scene[]>(`/workspaces/${id}/scenes/${sceneNumber}`, {
+    request<Scene[]>(`/projects/${id}/scenes/${sceneNumber}`, {
       method: 'PUT',
       body: JSON.stringify(patch)
     }),
@@ -278,32 +278,32 @@ export const api = {
       trimEndSec?: number;
     }
   ) =>
-    request<{ scenes: Scene[]; assets: AssetsState }>(`/workspaces/${id}/scenes/from-media`, {
+    request<{ scenes: Scene[]; assets: AssetsState }>(`/projects/${id}/scenes/from-media`, {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
   removeScene: (id: string, sceneNumber: number) =>
-    request<Scene[]>(`/workspaces/${id}/scenes/${sceneNumber}`, { method: 'DELETE' }),
+    request<Scene[]>(`/projects/${id}/scenes/${sceneNumber}`, { method: 'DELETE' }),
   trimSceneAsset: (id: string, sceneNumber: number, trimStartSec: number, trimEndSec: number) =>
-    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/trim`, {
+    request<AssetsState>(`/projects/${id}/assets/${sceneNumber}/trim`, {
       method: 'PUT',
       body: JSON.stringify({ trimStartSec, trimEndSec })
     }),
 
   // assets
-  getAssets: (id: string) => request<AssetsState>(`/workspaces/${id}/assets`),
+  getAssets: (id: string) => request<AssetsState>(`/projects/${id}/assets`),
   searchSceneAssets: (id: string, sceneNumber: number, keywords: string[]) =>
-    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/search`, {
+    request<AssetsState>(`/projects/${id}/assets/${sceneNumber}/search`, {
       method: 'POST',
       body: JSON.stringify({ keywords })
     }),
   selectSceneAsset: (id: string, sceneNumber: number, ref: AssetRef) =>
-    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/select`, {
+    request<AssetsState>(`/projects/${id}/assets/${sceneNumber}/select`, {
       method: 'POST',
       body: JSON.stringify({ ref })
     }),
   clearSceneAsset: (id: string, sceneNumber: number) =>
-    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}/select`, {
+    request<AssetsState>(`/projects/${id}/assets/${sceneNumber}/select`, {
       method: 'DELETE'
     }),
   saveSceneMeta: (
@@ -311,16 +311,16 @@ export const api = {
     sceneNumber: number,
     body: { keywords: string[]; imagePrompt: string }
   ) =>
-    request<AssetsState>(`/workspaces/${id}/assets/${sceneNumber}`, {
+    request<AssetsState>(`/projects/${id}/assets/${sceneNumber}`, {
       method: 'PUT',
       body: JSON.stringify(body)
     }),
   autofillAssets: (id: string) =>
-    request<AssetsState>(`/workspaces/${id}/assets/autofill`, { method: 'POST' }),
+    request<AssetsState>(`/projects/${id}/assets/autofill`, { method: 'POST' }),
   uploadSceneAsset: async (id: string, sceneNumber: number, file: File) => {
     const fd = new FormData();
     fd.append('file', file);
-    const res = await fetch(`/api/workspaces/${id}/assets/${sceneNumber}/upload`, {
+    const res = await fetch(`/api/projects/${id}/assets/${sceneNumber}/upload`, {
       method: 'POST',
       body: fd
     });
@@ -338,20 +338,20 @@ export const api = {
   },
 
   // video renders
-  getRenders: (id: string) => request<RenderRecord[]>(`/workspaces/${id}/video`),
+  getRenders: (id: string) => request<RenderRecord[]>(`/projects/${id}/video`),
   getRenderStatus: (id: string, rid: string) =>
-    request<RenderRecord>(`/workspaces/${id}/video/${rid}`),
+    request<RenderRecord>(`/projects/${id}/video/${rid}`),
   renderVideo: (id: string, timeline: RenderTimelinePayload) =>
-    request<RenderRecord>(`/workspaces/${id}/video`, {
+    request<RenderRecord>(`/projects/${id}/video`, {
       method: 'POST',
       body: JSON.stringify({ timeline })
     }),
   deleteRender: (id: string, rid: string) =>
-    request<Manifest>(`/workspaces/${id}/video/${rid}`, { method: 'DELETE' }),
+    request<Manifest>(`/projects/${id}/video/${rid}`, { method: 'DELETE' }),
   uploadMusic: async (id: string, file: File) => {
     const fd = new FormData();
     fd.append('file', file);
-    const res = await fetch(`/api/workspaces/${id}/video/music`, { method: 'POST', body: fd });
+    const res = await fetch(`/api/projects/${id}/video/music`, { method: 'POST', body: fd });
     if (!res.ok) {
       let msg = `${res.status} ${res.statusText}`;
       try {
@@ -365,23 +365,23 @@ export const api = {
     return res.json() as Promise<MusicTrack>;
   },
   deleteMusic: (id: string) =>
-    request<MusicTrack>(`/workspaces/${id}/video/music`, { method: 'DELETE' }),
+    request<MusicTrack>(`/projects/${id}/video/music`, { method: 'DELETE' }),
 
   // upload metadata + SEO
-  getUpload: (id: string) => request<UploadMeta>(`/workspaces/${id}/upload`),
+  getUpload: (id: string) => request<UploadMeta>(`/projects/${id}/upload`),
   saveUpload: (id: string, patch: Partial<UploadMeta>) =>
-    request<UploadMeta>(`/workspaces/${id}/upload`, { method: 'PUT', body: JSON.stringify(patch) }),
+    request<UploadMeta>(`/projects/${id}/upload`, { method: 'PUT', body: JSON.stringify(patch) }),
   generateSeo: (id: string) =>
-    request<SeoSuggestions>(`/workspaces/${id}/upload/seo`, { method: 'POST' }),
-  getYoutubeStatus: (id: string) => request<YoutubeStatus>(`/workspaces/${id}/upload/youtube`),
+    request<SeoSuggestions>(`/projects/${id}/upload/seo`, { method: 'POST' }),
+  getYoutubeStatus: (id: string) => request<YoutubeStatus>(`/projects/${id}/upload/youtube`),
   publishYoutube: (id: string) =>
-    request<YoutubeState>(`/workspaces/${id}/upload/publish`, { method: 'POST' }),
+    request<YoutubeState>(`/projects/${id}/upload/publish`, { method: 'POST' }),
 
   // thumbnail
   uploadThumbnail: async (id: string, file: File) => {
     const fd = new FormData();
     fd.append('file', file);
-    const res = await fetch(`/api/workspaces/${id}/upload/thumbnail`, { method: 'POST', body: fd });
+    const res = await fetch(`/api/projects/${id}/upload/thumbnail`, { method: 'POST', body: fd });
     if (!res.ok) {
       let msg = `${res.status} ${res.statusText}`;
       try {
@@ -395,19 +395,19 @@ export const api = {
     return res.json() as Promise<UploadMeta>;
   },
   thumbnailFromAsset: (id: string, source: 'library' | 'global', itemId: string) =>
-    request<UploadMeta>(`/workspaces/${id}/upload/thumbnail/from-asset`, {
+    request<UploadMeta>(`/projects/${id}/upload/thumbnail/from-asset`, {
       method: 'POST',
       body: JSON.stringify({ source, itemId })
     }),
   thumbnailFromFrame: (id: string, atSec?: number) =>
-    request<UploadMeta>(`/workspaces/${id}/upload/thumbnail/from-frame`, {
+    request<UploadMeta>(`/projects/${id}/upload/thumbnail/from-frame`, {
       method: 'POST',
       body: JSON.stringify(atSec == null ? {} : { atSec })
     }),
   removeThumbnail: (id: string) =>
-    request<UploadMeta>(`/workspaces/${id}/upload/thumbnail`, { method: 'DELETE' }),
+    request<UploadMeta>(`/projects/${id}/upload/thumbnail`, { method: 'DELETE' }),
   generateThumbnail: (id: string, prompt: string) =>
-    request<UploadMeta>(`/workspaces/${id}/upload/thumbnail/generate`, {
+    request<UploadMeta>(`/projects/${id}/upload/thumbnail/generate`, {
       method: 'POST',
       body: JSON.stringify({ prompt })
     }),
@@ -415,12 +415,12 @@ export const api = {
   // AI image generation
   imageGenStatus: () => request<ImageGenStatus>(`/ai/image-status`),
   generateLibraryImage: (id: string, prompt: string) =>
-    request<LibraryItem>(`/workspaces/${id}/library/generate`, {
+    request<LibraryItem>(`/projects/${id}/library/generate`, {
       method: 'POST',
       body: JSON.stringify({ prompt })
     }),
   generateSceneImage: (id: string, scene: number, prompt: string) =>
-    request<{ item: LibraryItem; assets: AssetsState }>(`/workspaces/${id}/assets/${scene}/generate`, {
+    request<{ item: LibraryItem; assets: AssetsState }>(`/projects/${id}/assets/${scene}/generate`, {
       method: 'POST',
       body: JSON.stringify({ prompt })
     }),
@@ -445,8 +445,8 @@ export const api = {
     request<WithReauth<TopVideos>>(`/analytics/top?range=${range}`),
   analyticsRefresh: () => request<{ ok: boolean }>(`/analytics/refresh`, { method: 'POST' }),
   analyticsOauthResult: () => request<OauthResult>(`/analytics/oauth/result`),
-  workspaceAnalytics: (id: string) =>
-    request<WithReauth<WorkspaceAnalytics>>(`/workspaces/${id}/analytics`),
+  projectAnalytics: (id: string) =>
+    request<WithReauth<ProjectAnalytics>>(`/projects/${id}/analytics`),
 
   // templates
   listTemplates: () => request<PromptTemplate[]>('/prompt-templates'),

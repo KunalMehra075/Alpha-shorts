@@ -68,7 +68,7 @@ const ThumbFromAsset = z.object({
   itemId: z.string().min(1)
 });
 
-// POST set the thumbnail from a workspace-library or global-media image.
+// POST set the thumbnail from a project-library or global-media image.
 uploadRouter.post(
   '/thumbnail/from-asset',
   ah((req, res) => {

@@ -13,7 +13,7 @@ export function AssetsPage() {
     <div className="mx-auto max-w-7xl px-8 py-8">
       <h1 className="text-3xl font-extrabold tracking-tight">Assets</h1>
       <p className="mt-1 text-muted-foreground">
-        Global images and videos, reusable across all your workspaces.
+        Global images and videos, reusable across all your projects.
       </p>
 
       <Tabs defaultValue="image" className="mt-6">
@@ -136,7 +136,7 @@ function EmptyState({ kind, onUpload }: { kind: 'image' | 'video'; onUpload: () 
         <div>
           <p className="text-base font-semibold">No {kind}s yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Upload {kind}s to reuse them across your workspaces.
+            Upload {kind}s to reuse them across your projects.
           </p>
         </div>
         <Button variant="primary" onClick={onUpload}>

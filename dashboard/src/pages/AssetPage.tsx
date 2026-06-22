@@ -55,7 +55,7 @@ import {
   useUploadLibrary,
   useUploadSceneAsset
 } from '@/lib/queries';
-import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
+import { useProjectCtx } from '@/layouts/ProjectLayout';
 import { placeholderDataUri } from '@/lib/placeholder';
 import { formatBytes } from '@/lib/mockMedia';
 import { libraryUrl } from '@/lib/utils';
@@ -76,7 +76,7 @@ function thumbFor(id: string, ref: AssetRef | null): string | null {
 }
 
 export function AssetPage() {
-  const { workspace, id } = useWorkspaceCtx();
+  const { project, id } = useProjectCtx();
   const navigate = useNavigate();
   const { data: scenesData, isLoading: scenesLoading } = useScenes(id);
   const { data: assets } = useAssets(id);
@@ -107,7 +107,7 @@ export function AssetPage() {
 
   // Whether this short has a script/narration (drives spoken-line columns/fields).
   const hasScript =
-    workspace.script.currentVersion != null || scenes.some((s) => (s.spokenLine ?? '').trim().length > 0);
+    project.script.currentVersion != null || scenes.some((s) => (s.spokenLine ?? '').trim().length > 0);
 
   const addToLibrary = (files: File[]) => {
     const media = files.filter((f) => /^(image|video|audio)\//.test(f.type));
@@ -135,14 +135,14 @@ export function AssetPage() {
 
   // No scenes yet and the user hasn't chosen manual → offer both entry points.
   if (!scenes.length && !manualMode) {
-    const canAi = hasScript || workspace.captions.hasTranscript;
+    const canAi = hasScript || project.captions.hasTranscript;
     return (
       <div className="animate-fade-in">
         <TabHeader
           icon={Images}
           title="Assets"
           description="Plan the scene-by-scene breakdown, then assign a visual to each scene."
-          status={workspace.stages.assets.status}
+          status={project.stages.assets.status}
         />
         <div className="grid gap-4 sm:grid-cols-2">
           {/* AI */}
@@ -245,7 +245,7 @@ export function AssetPage() {
         icon={Images}
         title="Assets"
         description="Edit the breakdown and assign a visual to each scene."
-        status={workspace.stages.assets.status}
+        status={project.stages.assets.status}
         actions={
           <div className="flex gap-2">
             {hasScript && (
@@ -965,7 +965,7 @@ function AssetLibrary({
           <DialogHeader>
             <DialogTitle>Generate image with AI</DialogTitle>
             <DialogDescription>
-              Describe the image — generated in 9:16 and added to this workspace's library.
+              Describe the image — generated in 9:16 and added to this project's library.
             </DialogDescription>
           </DialogHeader>
           <Textarea
@@ -1006,7 +1006,7 @@ function AssetLibrary({
   );
 }
 
-// ── Add-from-global-media modal (copies global items into the workspace library) ──
+// ── Add-from-global-media modal (copies global items into the project library) ──
 function GlobalLibraryPicker({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: gImages } = useMediaLibrary('image');
   const { data: gVideos } = useMediaLibrary('video');
@@ -1039,7 +1039,7 @@ function GlobalLibraryPicker({ id, onClose }: { id: string; onClose: () => void 
             key={m.id}
             onClick={() => add(m)}
             disabled={addFromGlobal.isPending}
-            title={`${m.name} — add to workspace`}
+            title={`${m.name} — add to project`}
             className={cn(
               'group relative aspect-[9/16] overflow-hidden rounded-lg ring-1 transition disabled:opacity-60',
               added[m.id] ? 'ring-2 ring-accent' : 'ring-border hover:ring-2 hover:ring-accent'
@@ -1065,7 +1065,7 @@ function GlobalLibraryPicker({ id, onClose }: { id: string; onClose: () => void 
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add from global media</DialogTitle>
-          <DialogDescription>Copy images, videos, or music from your global library into this workspace.</DialogDescription>
+          <DialogDescription>Copy images, videos, or music from your global library into this project.</DialogDescription>
         </DialogHeader>
         <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search global media…" className="h-9" />
         <Tabs defaultValue="images" className="mt-1">
@@ -1227,7 +1227,7 @@ function AddSceneModal({
                 <TabsTrigger value="global">Global ({globalItems.length})</TabsTrigger>
               </TabsList>
               <TabsContent value="local">
-                <Grid list={localItems} empty="No workspace assets yet — use Import to add some." />
+                <Grid list={localItems} empty="No project assets yet — use Import to add some." />
               </TabsContent>
               <TabsContent value="global">
                 <Grid list={globalItems} empty="No global assets yet — add them on the Assets page." />

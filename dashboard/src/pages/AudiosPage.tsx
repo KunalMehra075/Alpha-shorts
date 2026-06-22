@@ -21,7 +21,7 @@ export function AudiosPage() {
     <div className="mx-auto max-w-7xl px-8 py-8">
       <h1 className="text-3xl font-extrabold tracking-tight">Audios</h1>
       <p className="mt-1 text-muted-foreground">
-        Global background music and sound effects, reusable across all workspaces.
+        Global background music and sound effects, reusable across all projects.
       </p>
 
       <Tabs defaultValue="music" className="mt-6">
@@ -152,7 +152,7 @@ function AudioList({
             <div>
               <p className="text-base font-semibold">No {kindLabel}s yet</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Upload audio to reuse it across your workspaces.
+                Upload audio to reuse it across your projects.
               </p>
             </div>
             <Button variant="primary" onClick={() => inputRef.current?.click()}>

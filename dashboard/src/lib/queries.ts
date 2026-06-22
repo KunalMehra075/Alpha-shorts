@@ -7,8 +7,8 @@ import { api } from './api';
 import type { AnalyticsRange, Language, MediaKind, Scene, ScriptVersion } from './types';
 
 export const qk = {
-  workspaces: ['workspaces'] as const,
-  workspace: (id: string) => ['workspace', id] as const,
+  projects: ['projects'] as const,
+  project: (id: string) => ['project', id] as const,
   script: (id: string) => ['script', id] as const,
   scriptVersions: (id: string) => ['script-versions', id] as const,
   voices: ['voices'] as const,
@@ -21,57 +21,57 @@ export const qk = {
   stats: ['stats'] as const
 };
 
-// ── Workspaces ────────────────────────────────────────────────────────────
-export function useWorkspaces() {
-  return useQuery({ queryKey: qk.workspaces, queryFn: api.listWorkspaces });
+// ── Projects ────────────────────────────────────────────────────────────
+export function useProjects() {
+  return useQuery({ queryKey: qk.projects, queryFn: api.listProjects });
 }
 
-export function useWorkspace(id: string | undefined) {
+export function useProject(id: string | undefined) {
   return useQuery({
-    queryKey: qk.workspace(id ?? ''),
-    queryFn: () => api.getWorkspace(id!),
+    queryKey: qk.project(id ?? ''),
+    queryFn: () => api.getProject(id!),
     enabled: !!id
   });
 }
 
-export function useCreateWorkspace() {
+export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ name, language }: { name: string; language?: Language }) =>
-      api.createWorkspace(name, language),
+      api.createProject(name, language),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.projects });
       qc.invalidateQueries({ queryKey: qk.stats });
     }
   });
 }
 
-export function useUpdateWorkspace() {
+export function useUpdateProject() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: { name?: string; language?: Language } }) =>
-      api.updateWorkspace(id, patch),
+      api.updateProject(id, patch),
     onSuccess: (m) => {
-      qc.invalidateQueries({ queryKey: qk.workspaces });
-      qc.invalidateQueries({ queryKey: qk.workspace(m.id) });
+      qc.invalidateQueries({ queryKey: qk.projects });
+      qc.invalidateQueries({ queryKey: qk.project(m.id) });
     }
   });
 }
 
-export function useDuplicateWorkspace() {
+export function useDuplicateProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.duplicateWorkspace(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspaces })
+    mutationFn: (id: string) => api.duplicateProject(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.projects })
   });
 }
 
-export function useDeleteWorkspace() {
+export function useDeleteProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.deleteWorkspace(id),
+    mutationFn: (id: string) => api.deleteProject(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.projects });
       qc.invalidateQueries({ queryKey: qk.stats });
     }
   });
@@ -97,8 +97,8 @@ export function useScriptVersions(id: string | undefined) {
 function invalidateScript(qc: ReturnType<typeof useQueryClient>, id: string) {
   qc.invalidateQueries({ queryKey: qk.script(id) });
   qc.invalidateQueries({ queryKey: qk.scriptVersions(id) });
-  qc.invalidateQueries({ queryKey: qk.workspace(id) });
-  qc.invalidateQueries({ queryKey: qk.workspaces });
+  qc.invalidateQueries({ queryKey: qk.project(id) });
+  qc.invalidateQueries({ queryKey: qk.projects });
 }
 
 export function useGenerateScript(id: string) {
@@ -120,8 +120,8 @@ export function useSaveScript(id: string) {
       api.saveScript(id, data),
     onSuccess: (sv: ScriptVersion) => {
       qc.setQueryData(qk.script(id), sv);
-      qc.invalidateQueries({ queryKey: qk.workspace(id) });
-      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+      qc.invalidateQueries({ queryKey: qk.projects });
     }
   });
 }
@@ -152,8 +152,8 @@ export function useAudio(id: string | undefined) {
 
 function invalidateAudio(qc: ReturnType<typeof useQueryClient>, id: string) {
   qc.invalidateQueries({ queryKey: qk.audio(id) });
-  qc.invalidateQueries({ queryKey: qk.workspace(id) });
-  qc.invalidateQueries({ queryKey: qk.workspaces });
+  qc.invalidateQueries({ queryKey: qk.project(id) });
+  qc.invalidateQueries({ queryKey: qk.projects });
   qc.invalidateQueries({ queryKey: qk.stats });
 }
 
@@ -208,8 +208,8 @@ export function useGenerateCaptions(id: string) {
     onSuccess: (state) => {
       qc.setQueryData(qk.captions(id), state);
       qc.invalidateQueries({ queryKey: qk.captions(id) });
-      qc.invalidateQueries({ queryKey: qk.workspace(id) });
-      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+      qc.invalidateQueries({ queryKey: qk.projects });
     }
   });
 }
@@ -355,8 +355,8 @@ export function useSelectSceneFromLibrary(id: string) {
     onSuccess: (state) => {
       qc.setQueryData(qk.assets(id), state);
       qc.invalidateQueries({ queryKey: qk.assets(id) });
-      qc.invalidateQueries({ queryKey: qk.workspace(id) });
-      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+      qc.invalidateQueries({ queryKey: qk.projects });
     }
   });
 }
@@ -365,7 +365,7 @@ export function useMusicFromLibrary(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (itemId: string) => api.musicFromLibrary(id, itemId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspace(id) })
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project(id) })
   });
 }
 
@@ -373,7 +373,7 @@ export function useMusicFromGlobal(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (itemId: string) => api.musicFromGlobal(id, itemId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspace(id) })
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project(id) })
   });
 }
 
@@ -394,8 +394,8 @@ export function useBuildBreakdown(id: string) {
       qc.setQueryData(qk.scenes(id), r.scenes);
       qc.invalidateQueries({ queryKey: qk.scenes(id) });
       qc.invalidateQueries({ queryKey: qk.assets(id) });
-      qc.invalidateQueries({ queryKey: qk.workspace(id) });
-      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+      qc.invalidateQueries({ queryKey: qk.projects });
     }
   });
 }
@@ -423,8 +423,8 @@ export function useAddSceneFromMedia(id: string) {
     onSuccess: ({ scenes, assets }) => {
       qc.setQueryData(qk.scenes(id), scenes);
       qc.setQueryData(qk.assets(id), assets);
-      qc.invalidateQueries({ queryKey: qk.workspace(id) });
-      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+      qc.invalidateQueries({ queryKey: qk.projects });
       qc.invalidateQueries({ queryKey: qk.stats });
     }
   });
@@ -437,8 +437,8 @@ export function useRemoveScene(id: string) {
     onSuccess: (scenes) => {
       qc.setQueryData(qk.scenes(id), scenes);
       qc.invalidateQueries({ queryKey: qk.assets(id) });
-      qc.invalidateQueries({ queryKey: qk.workspace(id) });
-      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+      qc.invalidateQueries({ queryKey: qk.projects });
     }
   });
 }
@@ -466,8 +466,8 @@ export function useAssets(id: string | undefined) {
 
 function invalidateAssets(qc: ReturnType<typeof useQueryClient>, id: string) {
   qc.invalidateQueries({ queryKey: qk.assets(id) });
-  qc.invalidateQueries({ queryKey: qk.workspace(id) });
-  qc.invalidateQueries({ queryKey: qk.workspaces });
+  qc.invalidateQueries({ queryKey: qk.project(id) });
+  qc.invalidateQueries({ queryKey: qk.projects });
   qc.invalidateQueries({ queryKey: qk.stats });
 }
 
@@ -551,8 +551,8 @@ export function useRenders(id: string | undefined) {
 
 function invalidateRenders(qc: ReturnType<typeof useQueryClient>, id: string) {
   qc.invalidateQueries({ queryKey: qk.renders(id) });
-  qc.invalidateQueries({ queryKey: qk.workspace(id) });
-  qc.invalidateQueries({ queryKey: qk.workspaces });
+  qc.invalidateQueries({ queryKey: qk.project(id) });
+  qc.invalidateQueries({ queryKey: qk.projects });
   qc.invalidateQueries({ queryKey: qk.stats });
 }
 
@@ -577,7 +577,7 @@ export function useUploadMusic(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (file: File) => api.uploadMusic(id, file),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspace(id) })
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project(id) })
   });
 }
 
@@ -585,7 +585,7 @@ export function useDeleteMusic(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.deleteMusic(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspace(id) })
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project(id) })
   });
 }
 
@@ -603,8 +603,8 @@ export function useSaveUpload(id: string) {
   return useMutation({
     mutationFn: (patch: Partial<import('./types').UploadMeta>) => api.saveUpload(id, patch),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.workspace(id) });
-      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+      qc.invalidateQueries({ queryKey: qk.projects });
     }
   });
 }
@@ -615,8 +615,8 @@ export function useGenerateSeo(id: string) {
 
 function invalidateUpload(qc: ReturnType<typeof useQueryClient>, id: string) {
   qc.invalidateQueries({ queryKey: ['upload', id] });
-  qc.invalidateQueries({ queryKey: qk.workspace(id) });
-  qc.invalidateQueries({ queryKey: qk.workspaces });
+  qc.invalidateQueries({ queryKey: qk.project(id) });
+  qc.invalidateQueries({ queryKey: qk.projects });
 }
 
 export function useUploadThumbnail(id: string) {
@@ -701,8 +701,8 @@ export function usePublishYoutube(id: string) {
     mutationFn: () => api.publishYoutube(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['youtube', id] });
-      qc.invalidateQueries({ queryKey: qk.workspace(id) });
-      qc.invalidateQueries({ queryKey: qk.workspaces });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+      qc.invalidateQueries({ queryKey: qk.projects });
       qc.invalidateQueries({ queryKey: qk.stats });
     }
   });
@@ -758,10 +758,10 @@ export function useRefreshAnalytics() {
   });
 }
 
-export function useWorkspaceAnalytics(id: string | undefined) {
+export function useProjectAnalytics(id: string | undefined) {
   return useQuery({
-    queryKey: ['analytics', 'workspace', id ?? ''],
-    queryFn: () => api.workspaceAnalytics(id!),
+    queryKey: ['analytics', 'project', id ?? ''],
+    queryFn: () => api.projectAnalytics(id!),
     enabled: !!id
   });
 }

@@ -13,7 +13,7 @@ import {
   saveCurrentScript
 } from '../lib/store';
 
-// mergeParams lets us read :id from the parent /workspaces/:id mount.
+// mergeParams lets us read :id from the parent /projects/:id mount.
 export const scriptRouter = Router({ mergeParams: true });
 
 const GenerateBody = z.object({
@@ -56,7 +56,7 @@ scriptRouter.post(
   '/generate',
   ah(async (req, res) => {
     const id = (req.params as any).id;
-    const m = readManifest(id); // 404 if workspace missing
+    const m = readManifest(id); // 404 if project missing
     const body = GenerateBody.parse(req.body);
 
     const result = await scriptGenerator.run({

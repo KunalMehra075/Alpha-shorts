@@ -60,7 +60,7 @@ const PlacementPatch = z.object({
 videoRouter.get(
   '/',
   ah((req, res) => {
-    readManifest(pid(req)); // 404 if workspace missing
+    readManifest(pid(req)); // 404 if project missing
     res.json(listRenders(pid(req)));
   })
 );

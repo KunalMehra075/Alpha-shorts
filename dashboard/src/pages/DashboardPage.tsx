@@ -4,18 +4,18 @@ import { BarChart3, Eye, FilmIcon, LineChart, Plus, UploadCloud } from 'lucide-r
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { StatCard } from '@/components/StatCard';
-import { CreateDialog } from '@/components/WorkspaceUI';
+import { CreateDialog } from '@/components/ProjectUI';
 import { relativeTime } from '@/lib/utils';
-import { useStats, useWorkspaces } from '@/lib/queries';
-import type { WorkspaceSummary } from '@/lib/types';
+import { useStats, useProjects } from '@/lib/queries';
+import type { ProjectSummary } from '@/lib/types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { data: workspaces } = useWorkspaces();
+  const { data: projects } = useProjects();
   const { data: stats } = useStats();
   const [createOpen, setCreateOpen] = useState(false);
 
-  const recents = useMemo(() => (workspaces ?? []).slice(0, 5), [workspaces]);
+  const recents = useMemo(() => (projects ?? []).slice(0, 5), [projects]);
 
   return (
     <div className="mx-auto max-w-7xl px-8 py-8">
@@ -28,13 +28,13 @@ export function DashboardPage() {
           </p>
         </div>
         <Button variant="primary" size="lg" onClick={() => setCreateOpen(true)}>
-          <Plus className="size-4" /> New Workspace
+          <Plus className="size-4" /> New Project
         </Button>
       </div>
 
       {/* Stats */}
       <div className="mt-7 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Workspaces" value={stats?.workspaces ?? workspaces?.length ?? 0} icon={<FilmIcon className="size-4" />} />
+        <StatCard label="Projects" value={stats?.projects ?? projects?.length ?? 0} icon={<FilmIcon className="size-4" />} />
         <StatCard label="Videos Generated" value={stats?.videosGenerated ?? 0} icon={<FilmIcon className="size-4" />} />
         <StatCard label="Videos Uploaded" value={stats?.videosUploaded ?? 0} icon={<UploadCloud className="size-4" />} />
         <StatCard label="Total Views" value={stats?.totalViews ?? 0} icon={<Eye className="size-4" />} hint="placeholder" />
@@ -76,7 +76,7 @@ function RecentProjects({
   items,
   onOpen
 }: {
-  items: WorkspaceSummary[];
+  items: ProjectSummary[];
   onOpen: (id: string) => void;
 }) {
   return (

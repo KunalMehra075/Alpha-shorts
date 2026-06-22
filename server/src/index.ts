@@ -3,10 +3,10 @@ import dotenv from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import { ZodError } from 'zod';
-import { PORT, ROOT, WORKSPACES_DIR, ensureBaseDirs } from './lib/paths';
+import { PORT, ROOT, PROJECTS_DIR, ensureBaseDirs } from './lib/paths';
 import { HttpError, getStats } from './lib/store';
 import { listVoices } from './lib/voices';
-import { workspacesRouter } from './routes/workspaces';
+import { projectsRouter } from './routes/projects';
 import { templatesRouter } from './routes/templates';
 import { soundsRouter } from './routes/sounds';
 import { GLOBAL_SOUNDS_DIR } from './lib/sounds';
@@ -28,15 +28,15 @@ app.use(express.json({ limit: '5mb' }));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.get('/api/stats', (_req, res) => res.json(getStats()));
 app.get('/api/voices', (_req, res) => res.json(listVoices()));
-app.use('/api/workspaces', workspacesRouter);
+app.use('/api/projects', projectsRouter);
 app.use('/api/prompt-templates', templatesRouter);
 app.use('/api/sounds', soundsRouter);
 app.use('/api/media-library', mediaRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/ai', aiRouter);
 
-// Serve workspace media read-only at /media/<workspaceId>/...
-app.use('/media', express.static(WORKSPACES_DIR));
+// Serve project media read-only at /media/<projectId>/...
+app.use('/media', express.static(PROJECTS_DIR));
 // Serve the global sound library read-only at /sounds/...
 app.use('/sounds', express.static(GLOBAL_SOUNDS_DIR));
 // Serve the global media library (images/videos/music) read-only at /library/...
@@ -59,5 +59,5 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 app.listen(PORT, () => {
   console.log(`[shorts-dashboard] API listening on http://localhost:${PORT}`);
-  console.log(`[shorts-dashboard] workspaces: ${WORKSPACES_DIR}`);
+  console.log(`[shorts-dashboard] projects: ${PROJECTS_DIR}`);
 });

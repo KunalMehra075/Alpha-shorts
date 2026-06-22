@@ -48,7 +48,7 @@ import {
   useUploadSound,
   useVideoSounds
 } from '@/lib/queries';
-import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
+import { useProjectCtx } from '@/layouts/ProjectLayout';
 import { placeholderDataUri } from '@/lib/placeholder';
 import { formatBytes, formatDuration as fmt } from '@/lib/mockMedia';
 import {
@@ -57,7 +57,7 @@ import {
   effectsFor,
   type Transition
 } from '@/lib/editorOptions';
-import { useEditorStore, useWorkspaceEditor } from '@/lib/editorStore';
+import { useEditorStore, useProjectEditor } from '@/lib/editorStore';
 import type { CaptionSettings, RenderRecord, Scene, SoundPlacement, VisualType } from '@/lib/types';
 
 type Clip = {
@@ -65,7 +65,7 @@ type Clip = {
   spokenLine: string;
   visualType: VisualType;
   thumb: string;
-  videoSrc?: string; // set when the selected asset is a workspace video file
+  videoSrc?: string; // set when the selected asset is a project video file
   trimStartSec: number; // where the trimmed segment starts in the source video
   hasAsset: boolean;
   effect: string;
@@ -75,7 +75,7 @@ type Clip = {
 };
 
 export function VideoEditorPage() {
-  const { workspace, id } = useWorkspaceCtx();
+  const { project, id } = useProjectCtx();
   const navigate = useNavigate();
   const { data: scenesData } = useScenes(id);
   const { data: caps } = useCaptions(id);
@@ -83,7 +83,7 @@ export function VideoEditorPage() {
   const scenes = scenesData ?? [];
   const assetRows = assets?.scenes ?? [];
 
-  const editor = useWorkspaceEditor(id);
+  const editor = useProjectEditor(id);
   const ensureTimeline = useEditorStore((s) => s.ensureTimeline);
   const applyPreset = useEditorStore((s) => s.applyPreset);
   const setSceneEffect = useEditorStore((s) => s.setSceneEffect);
@@ -131,7 +131,7 @@ export function VideoEditorPage() {
   }, [scenes, editor, assetRows, id]);
 
   const total = clips.reduce((a, c) => a + c.durationSec, 0);
-  const audioTake = workspace.audio.versions.find((v) => v.version === workspace.audio.currentVersion);
+  const audioTake = project.audio.versions.find((v) => v.version === project.audio.currentVersion);
   const music = editor.timeline.music;
   const captionsEnabled = editor.timeline.captionsEnabled;
 
@@ -161,15 +161,15 @@ export function VideoEditorPage() {
   const uploadSound = useUploadSound();
   const [soundSearch, setSoundSearch] = useState('');
 
-  // Real media for the preview player (served from the workspace).
+  // Real media for the preview player (served from the project).
   const narrationSrc = audioTake ? `/media/${id}/${audioTake.file}` : undefined;
-  const musicTrack = workspace.music?.file ? workspace.music : null;
+  const musicTrack = project.music?.file ? project.music : null;
   const musicSrc = music.enabled && musicTrack ? `/media/${id}/${musicTrack.file}` : undefined;
 
   if (!scenes.length) {
     return (
       <div className="animate-fade-in">
-        <TabHeader icon={Clapperboard} title="Video Editor" description="Arrange scenes, effects and transitions, then render." status={workspace.stages.video.status} />
+        <TabHeader icon={Clapperboard} title="Video Editor" description="Arrange scenes, effects and transitions, then render." status={project.stages.video.status} />
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center gap-3 p-12 text-center">
             <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
@@ -192,7 +192,7 @@ export function VideoEditorPage() {
         icon={Clapperboard}
         title="Video Editor"
         description="Auto-built timeline — tweak effects & transitions, then render."
-        status={workspace.stages.video.status}
+        status={project.stages.video.status}
         actions={
           <Badge variant="outline" title="UI preview — real render wired later">
             preview
@@ -240,7 +240,7 @@ export function VideoEditorPage() {
               musicVolume={music.volume / 100}
               placements={placements}
               soundsEnabled={soundsEnabled}
-              workspaceId={id}
+              projectId={id}
               onScrubToScene={setSelected}
             />
           </CardContent>
@@ -548,7 +548,7 @@ export function VideoEditorPage() {
       <RenderSection
         sceneCount={clips.length}
         totalDuration={total}
-        workspaceId={id}
+        projectId={id}
         buildPayload={() => ({
           scenes: clips.map((c) => ({
             index: c.index,
@@ -672,12 +672,12 @@ export function VideoEditorPage() {
                   className="h-9 my-2"
                 />
                 <Section
-                  title="Workspace"
+                  title="Project"
                   items={ws}
                   kind="ws"
                   empty={
                     audioLibrary.length === 0
-                      ? 'No audio in this workspace yet — add some in the Assets step.'
+                      ? 'No audio in this project yet — add some in the Assets step.'
                       : 'No matches.'
                   }
                 />
@@ -818,7 +818,7 @@ function EditorPreview({
   musicVolume = 0.3,
   placements = [],
   soundsEnabled = true,
-  workspaceId,
+  projectId,
   onScrubToScene
 }: {
   clips: Clip[];
@@ -831,7 +831,7 @@ function EditorPreview({
   musicVolume?: number;
   placements?: { id: string; file: string; atSec: number; volume: number }[];
   soundsEnabled?: boolean;
-  workspaceId: string;
+  projectId: string;
   onScrubToScene: (i: number) => void;
 }) {
   const [time, setTime] = useState(0);
@@ -1101,7 +1101,7 @@ function EditorPreview({
             ref={(el) => {
               sfxRefs.current[p.id] = el;
             }}
-            src={`/media/${workspaceId}/${p.file}`}
+            src={`/media/${projectId}/${p.file}`}
             preload="auto"
             className="hidden"
           />
@@ -1122,19 +1122,19 @@ type RenderPayload = {
 function RenderSection({
   sceneCount,
   totalDuration,
-  workspaceId,
+  projectId,
   buildPayload,
   onProceed
 }: {
   sceneCount: number;
   totalDuration: number;
-  workspaceId: string;
+  projectId: string;
   buildPayload: () => RenderPayload;
   onProceed: () => void;
 }) {
-  const { data: renders = [] } = useRenders(workspaceId);
-  const render = useRenderVideo(workspaceId);
-  const del = useDeleteRender(workspaceId);
+  const { data: renders = [] } = useRenders(projectId);
+  const render = useRenderVideo(projectId);
+  const del = useDeleteRender(projectId);
 
   const active = renders.find((r) => r.status === 'rendering');
   const hasCompleted = renders.some((r) => r.status === 'completed');
@@ -1210,7 +1210,7 @@ function RenderSection({
                 <RenderCard
                   key={r.id}
                   r={r}
-                  workspaceId={workspaceId}
+                  projectId={projectId}
                   onDelete={() => del.mutate(r.id)}
                 />
               ))}
@@ -1224,14 +1224,14 @@ function RenderSection({
 
 function RenderCard({
   r,
-  workspaceId,
+  projectId,
   onDelete
 }: {
   r: RenderRecord;
-  workspaceId: string;
+  projectId: string;
   onDelete: () => void;
 }) {
-  const src = r.file ? `/media/${workspaceId}/${r.file}?v=${r.sizeBytes}` : null;
+  const src = r.file ? `/media/${projectId}/${r.file}?v=${r.sizeBytes}` : null;
 
   return (
     <div className="group overflow-hidden rounded-xl border border-border bg-card">

@@ -5,12 +5,12 @@ import { customAlphabet } from 'nanoid';
 // Engine module (ffprobe duration).
 import { getDuration } from '../../../src/lib/ffmpeg.js';
 import { ensureDir, existsSync, readJsonOr, removePath, writeJson } from './fsx';
-import { ROOT, workspaceDir } from './paths';
+import { ROOT, projectDir } from './paths';
 import { HttpError, addSoundPlacement, soundsDir as wsSoundsDir } from './store';
 
 const shortId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 10);
 
-// Global, app-level sound library (shared across all workspaces).
+// Global, app-level sound library (shared across all projects).
 export const GLOBAL_SOUNDS_DIR = join(ROOT, 'sounds');
 const SAMPLES_DIR = join(GLOBAL_SOUNDS_DIR, 'samples');
 const INDEX = join(GLOBAL_SOUNDS_DIR, 'library.json');
@@ -130,7 +130,7 @@ export function deleteSound(id: string): SoundItem[] {
   return next;
 }
 
-// Place a global sound onto a workspace's video timeline (copy-on-place).
+// Place a global sound onto a project's video timeline (copy-on-place).
 export async function placeSound(opts: { id: string; soundId: string; atSec: number }) {
   const { id, soundId, atSec } = opts;
   const snd = (await getSoundLibrary()).find((s) => s.id === soundId);
@@ -139,7 +139,7 @@ export async function placeSound(opts: { id: string; soundId: string; atSec: num
   const pid = shortId();
   const ext = extname(snd.file) || '.mp3';
   const rel = `sounds/${pid}${ext}`;
-  copyFileSync(join(GLOBAL_SOUNDS_DIR, snd.file), join(workspaceDir(id), rel));
+  copyFileSync(join(GLOBAL_SOUNDS_DIR, snd.file), join(projectDir(id), rel));
   const rec = {
     id: pid,
     name: snd.name,

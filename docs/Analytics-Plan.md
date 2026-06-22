@@ -8,7 +8,7 @@ deferred, plus the architecture all phases share.
 
 | Topic | Decision |
 | --- | --- |
-| Phase 1 scope | Core channel dashboard (KPIs, growth chart, video table, top performers, per-workspace analytics) |
+| Phase 1 scope | Core channel dashboard (KPIs, growth chart, video table, top performers, per-project analytics) |
 | Data source | Real YouTube Data + Analytics APIs; user re-auths with analytics scopes |
 | Category / hook style | AI-classified from the script (deferred to Phase 2 dashboards; schema fields added now) |
 | Charts | shadcn charts (Recharts under the hood) |
@@ -22,12 +22,12 @@ flowchart LR
   subgraph Server["server/ (Express)"]
     LIB["lib/analytics.ts<br/>fetch + join + period-compare"]
     CACHE[("disk + mem cache<br/>TTL + manual refresh")]
-    ROUTES["routes/analytics.ts<br/>/api/analytics/*<br/>/api/workspaces/:id/analytics"]
+    ROUTES["routes/analytics.ts<br/>/api/analytics/*<br/>/api/projects/:id/analytics"]
   end
   subgraph Web["dashboard/ (React)"]
     HOOKS["queries.ts hooks"]
     PAGE["AnalyticsPage<br/>KPIs · charts · table · top"]
-    WS["Workspace ▸ Analytics"]
+    WS["Project ▸ Analytics"]
   end
   DATA --> LIB
   YTA --> LIB
@@ -60,7 +60,7 @@ flowchart TD
   RANGE --> SUBS["Subscriber growth<br/>gained / lost / net"]
   RANGE --> TOP["Top performers<br/>views · retention · subs · engagement"]
   RANGE --> TABLE["Video performance table<br/>search · sort · filter"]
-  WS["Per-workspace analytics<br/>(reads stored videoId)"]
+  WS["Per-project analytics<br/>(reads stored videoId)"]
 ```
 
 **Backend**
@@ -71,14 +71,14 @@ flowchart TD
   on-disk cache keyed by range (TTL ~30 min) with manual refresh. 403/insufficient
   scope → `{ needsReauth }`.
 - `routes/analytics.ts` — `/api/analytics/{status,overview,timeseries,videos,top,refresh}`
-  and `/api/workspaces/:id/analytics`.
+  and `/api/projects/:id/analytics`.
 
 **Frontend**
 - `recharts` + `components/ui/chart.tsx` (shadcn chart primitives, themed to tokens).
-- Rebuilt `AnalyticsPage.tsx` (command center) + `WorkspaceAnalyticsPage.tsx`
-  (link in the workspace header).
+- Rebuilt `AnalyticsPage.tsx` (command center) + `ProjectAnalyticsPage.tsx`
+  (link in the project header).
 
-**Groundwork (no dead code):** add `category` + `hookStyle` to the workspace
+**Groundwork (no dead code):** add `category` + `hookStyle` to the project
 schema. Population via AI classification ships in Phase 2 — scripts are persisted,
 so classification can run retroactively with no backfill loss.
 
@@ -110,5 +110,5 @@ flowchart TD
 
 - Server + dashboard typecheck/build.
 - Backend smoke: `needsReauth` path (no analytics scope) and, once re-authed,
-  real `overview`/`timeseries`/`videos`. Throwaway workspace for the per-workspace
-  endpoint. Dark-mode screenshots. Cleanup leaving user workspaces untouched.
+  real `overview`/`timeseries`/`videos`. Throwaway project for the per-project
+  endpoint. Dark-mode screenshots. Cleanup leaving user projects untouched.

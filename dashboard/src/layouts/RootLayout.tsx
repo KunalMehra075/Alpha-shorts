@@ -16,7 +16,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/workspaces', label: 'Workspaces', icon: FolderKanban, end: false },
+  { to: '/projects', label: 'Projects', icon: FolderKanban, end: false },
   { to: '/analytics', label: 'Analytics', icon: BarChart3, end: false },
   { to: '/assets', label: 'Assets', icon: ImageIcon, end: false },
   { to: '/audios', label: 'Audios', icon: Music, end: false },

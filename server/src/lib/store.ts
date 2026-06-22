@@ -4,9 +4,9 @@ import { customAlphabet } from 'nanoid';
 import {
   CONFIG_DIR,
   TEMPLATES_FILE,
-  WORKSPACES_DIR,
+  PROJECTS_DIR,
   ensureBaseDirs,
-  workspaceDir
+  projectDir
 } from './paths';
 import {
   copyDir,
@@ -27,7 +27,7 @@ import {
   type RenderRecord,
   type Scene,
   type StageStatus,
-  type WorkspaceSummary
+  type ProjectSummary
 } from './schema';
 
 const shortId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 6);
@@ -51,27 +51,27 @@ function slugify(name: string) {
       .trim()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
-      .slice(0, 40) || 'workspace'
+      .slice(0, 40) || 'project'
   );
 }
 
 function manifestPath(id: string) {
-  return join(workspaceDir(id), 'workspace.json');
+  return join(projectDir(id), 'project.json');
 }
 
 function scriptDir(id: string) {
-  return join(workspaceDir(id), 'script');
+  return join(projectDir(id), 'script');
 }
 
 function scriptVersionPath(id: string, version: number) {
   return join(scriptDir(id), 'versions', `v${version}.json`);
 }
 
-// ── Workspaces ──────────────────────────────────────────────────────────────
+// ── Projects ──────────────────────────────────────────────────────────────
 
 export function readManifest(id: string): Manifest {
   const file = manifestPath(id);
-  if (!existsSync(file)) throw new HttpError(404, `Workspace "${id}" not found.`);
+  if (!existsSync(file)) throw new HttpError(404, `Project "${id}" not found.`);
   return Manifest.parse(readJson(file));
 }
 
@@ -81,10 +81,10 @@ function writeManifest(m: Manifest): Manifest {
   return m;
 }
 
-export function listWorkspaces(): WorkspaceSummary[] {
+export function listProjects(): ProjectSummary[] {
   ensureBaseDirs();
-  const entries = readdirSync(WORKSPACES_DIR, { withFileTypes: true });
-  const out: WorkspaceSummary[] = [];
+  const entries = readdirSync(PROJECTS_DIR, { withFileTypes: true });
+  const out: ProjectSummary[] = [];
   for (const e of entries) {
     if (!e.isDirectory()) continue;
     const file = manifestPath(e.name);
@@ -107,13 +107,13 @@ export function listWorkspaces(): WorkspaceSummary[] {
   return out;
 }
 
-export function createWorkspace(name: string, language: Language = 'en'): Manifest {
+export function createProject(name: string, language: Language = 'en'): Manifest {
   ensureBaseDirs();
   const trimmed = (name || '').trim();
-  if (!trimmed) throw new HttpError(400, 'Workspace name is required.');
+  if (!trimmed) throw new HttpError(400, 'Project name is required.');
 
   const id = `${slugify(trimmed)}-${shortId()}`;
-  ensureDir(workspaceDir(id));
+  ensureDir(projectDir(id));
   ensureDir(join(scriptDir(id), 'versions'));
 
   const manifest: Manifest = Manifest.parse({
@@ -128,7 +128,7 @@ export function createWorkspace(name: string, language: Language = 'en'): Manife
   return writeManifest(manifest);
 }
 
-export function updateWorkspace(
+export function updateProject(
   id: string,
   patch: { name?: string; language?: Language }
 ): Manifest {
@@ -138,10 +138,10 @@ export function updateWorkspace(
   return writeManifest(m);
 }
 
-export function duplicateWorkspace(id: string): Manifest {
+export function duplicateProject(id: string): Manifest {
   const src = readManifest(id);
   const newId = `${slugify(src.name)}-${shortId()}`;
-  copyDir(workspaceDir(id), workspaceDir(newId));
+  copyDir(projectDir(id), projectDir(newId));
   const m = readManifest(newId);
   m.id = newId;
   m.name = `${src.name} (Copy)`;
@@ -149,9 +149,9 @@ export function duplicateWorkspace(id: string): Manifest {
   return writeManifest(m);
 }
 
-export function deleteWorkspace(id: string) {
-  if (!existsSync(manifestPath(id))) throw new HttpError(404, `Workspace "${id}" not found.`);
-  removePath(workspaceDir(id));
+export function deleteProject(id: string) {
+  if (!existsSync(manifestPath(id))) throw new HttpError(404, `Project "${id}" not found.`);
+  removePath(projectDir(id));
 }
 
 function setStage(m: Manifest, stage: keyof Manifest['stages'], status: StageStatus) {
@@ -274,7 +274,7 @@ function recomputeTimings(scenes: Scene[]): Scene[] {
 }
 
 // The editable breakdown. Backfills once from the current script version so
-// pre-existing workspaces (which stored scenes on the script) keep working.
+// pre-existing projects (which stored scenes on the script) keep working.
 export function getScenes(id: string): Scene[] {
   const m = readManifest(id);
   if (m.scenes.length === 0 && m.script.currentVersion != null) {
@@ -360,7 +360,7 @@ export function removeScene(id: string, sceneNumber: number): Scene[] {
   if (idx < 0) throw new HttpError(404, `Scene ${sceneNumber} not found.`);
 
   const row = m.assets.scenes.find((r) => r.sceneNumber === sceneNumber);
-  if (row?.selected?.file) removePath(join(workspaceDir(id), row.selected.file));
+  if (row?.selected?.file) removePath(join(projectDir(id), row.selected.file));
 
   m.scenes.splice(idx, 1);
   m.scenes = recomputeTimings(m.scenes); // scene = i + 1
@@ -384,7 +384,7 @@ export function removeScene(id: string, sceneNumber: number): Scene[] {
 // ── Audio ────────────────────────────────────────────────────────────────────
 
 export function audioDir(id: string) {
-  return join(workspaceDir(id), 'audio');
+  return join(projectDir(id), 'audio');
 }
 
 export function nextAudioVersion(id: string): number {
@@ -419,7 +419,7 @@ export function deleteAudioVersion(id: string, version: number): Manifest {
   const take = m.audio.versions.find((v) => v.version === version);
   if (!take) throw new HttpError(404, `Audio version ${version} not found.`);
 
-  removePath(join(workspaceDir(id), take.file));
+  removePath(join(projectDir(id), take.file));
   m.audio.versions = m.audio.versions.filter((v) => v.version !== version);
 
   if (m.audio.currentVersion === version) {
@@ -433,7 +433,7 @@ export function deleteAudioVersion(id: string, version: number): Manifest {
 // ── Captions ─────────────────────────────────────────────────────────────────
 
 export function captionsDir(id: string) {
-  return join(workspaceDir(id), 'captions');
+  return join(projectDir(id), 'captions');
 }
 
 export function getCaptions(id: string) {
@@ -454,7 +454,7 @@ export function setCaptions(
 // ── Assets ─────────────────────────────────────────────────────────────────────
 
 export function assetsDir(id: string) {
-  return join(workspaceDir(id), 'assets');
+  return join(projectDir(id), 'assets');
 }
 
 export function getAssetsState(id: string) {
@@ -526,7 +526,7 @@ export function setSceneAssets(
 // ── Media library ─────────────────────────────────────────────────────────────
 
 export function libraryDir(id: string) {
-  return join(workspaceDir(id), 'library');
+  return join(projectDir(id), 'library');
 }
 
 export function getLibrary(id: string) {
@@ -544,7 +544,7 @@ export function deleteLibraryItem(id: string, itemId: string): Manifest['library
   const m = readManifest(id);
   const item = m.library.find((x) => x.id === itemId);
   if (!item) throw new HttpError(404, `Library item "${itemId}" not found.`);
-  removePath(join(workspaceDir(id), item.file));
+  removePath(join(projectDir(id), item.file));
   m.library = m.library.filter((x) => x.id !== itemId);
   writeManifest(m);
   return m.library;
@@ -553,7 +553,7 @@ export function deleteLibraryItem(id: string, itemId: string): Manifest['library
 // ── Timeline sound effects (per-video placements) ─────────────────────────────
 
 export function soundsDir(id: string) {
-  return join(workspaceDir(id), 'sounds');
+  return join(projectDir(id), 'sounds');
 }
 
 export function getSounds(id: string) {
@@ -587,7 +587,7 @@ export function removeSoundPlacement(id: string, placementId: string): Manifest[
   const m = readManifest(id);
   const rec = m.sounds.find((s) => s.id === placementId);
   if (!rec) throw new HttpError(404, `Sound placement "${placementId}" not found.`);
-  removePath(join(workspaceDir(id), rec.file));
+  removePath(join(projectDir(id), rec.file));
   m.sounds = m.sounds.filter((s) => s.id !== placementId);
   writeManifest(m);
   return m.sounds;
@@ -596,14 +596,14 @@ export function removeSoundPlacement(id: string, placementId: string): Manifest[
 // ── Background music ──────────────────────────────────────────────────────────
 
 export function musicDir(id: string) {
-  return join(workspaceDir(id), 'music');
+  return join(projectDir(id), 'music');
 }
 
 export function getMusic(id: string) {
   return readManifest(id).music;
 }
 
-export function setWorkspaceMusic(id: string, patch: Partial<Manifest['music']>): Manifest {
+export function setProjectMusic(id: string, patch: Partial<Manifest['music']>): Manifest {
   const m = readManifest(id);
   m.music = { ...m.music, ...patch };
   return writeManifest(m);
@@ -612,7 +612,7 @@ export function setWorkspaceMusic(id: string, patch: Partial<Manifest['music']>)
 // ── Renders (Video Editor) ──────────────────────────────────────────────────────
 
 export function rendersDir(id: string) {
-  return join(workspaceDir(id), 'renders');
+  return join(projectDir(id), 'renders');
 }
 
 export function getRenders(id: string) {
@@ -647,7 +647,7 @@ export function deleteRender(id: string, rid: string): Manifest {
   const m = readManifest(id);
   const rec = m.renders.find((r) => r.id === rid);
   if (!rec) throw new HttpError(404, `Render "${rid}" not found.`);
-  if (rec.file) removePath(join(workspaceDir(id), rec.file));
+  if (rec.file) removePath(join(projectDir(id), rec.file));
   m.renders = m.renders.filter((r) => r.id !== rid);
   if (!m.renders.some((r) => r.status === 'completed')) {
     setStage(m, 'video', m.renders.length ? 'in_progress' : 'not_started');
@@ -661,7 +661,7 @@ export function getUpload(id: string) {
   const m = readManifest(id);
   const u = m.upload;
   // One-time: an UNTOUCHED legacy 'private' default flips to the new 'public'
-  // default. Workspaces where the uploader was actually used keep their choice.
+  // default. Projects where the uploader was actually used keep their choice.
   if (
     u.visibility === 'private' &&
     !u.title &&
@@ -788,11 +788,11 @@ export function deleteTemplate(id: string) {
 // ── Stats (placeholder) ──────────────────────────────────────────────────────
 
 export function getStats() {
-  const workspaces = listWorkspaces();
-  const videosGenerated = workspaces.filter((w) => w.stages.video.status === 'completed').length;
-  const videosUploaded = workspaces.filter((w) => w.stages.upload.status === 'completed').length;
+  const projects = listProjects();
+  const videosGenerated = projects.filter((w) => w.stages.video.status === 'completed').length;
+  const videosUploaded = projects.filter((w) => w.stages.upload.status === 'completed').length;
   return {
-    workspaces: workspaces.length,
+    projects: projects.length,
     videosGenerated,
     videosUploaded,
     totalViews: 0 // placeholder until upload analytics exist

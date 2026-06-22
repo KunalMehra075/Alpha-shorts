@@ -11,24 +11,24 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { TabHeader } from '@/components/TabHeader';
-import { useWorkspaceAnalytics } from '@/lib/queries';
-import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
+import { useProjectAnalytics } from '@/lib/queries';
+import { useProjectCtx } from '@/layouts/ProjectLayout';
 import { formatCompact, formatDurationSec, formatWatchTime } from '@/lib/utils';
 
 function isReauth(d: any): d is { needsReauth: true } {
   return !!d && typeof d === 'object' && d.needsReauth === true;
 }
 
-export function WorkspaceAnalyticsPage() {
-  const { id } = useWorkspaceCtx();
-  const { data, isLoading } = useWorkspaceAnalytics(id);
+export function ProjectAnalyticsPage() {
+  const { id } = useProjectCtx();
+  const { data, isLoading } = useProjectAnalytics(id);
 
   return (
     <div className="animate-fade-in">
       <TabHeader
         icon={BarChart3}
         title="Analytics"
-        description="Performance of this workspace’s published video."
+        description="Performance of this project’s published video."
       />
 
       {isLoading ? (
@@ -41,7 +41,7 @@ export function WorkspaceAnalyticsPage() {
           main Analytics page), then return here.
         </Note>
       ) : !data || data.published === false ? (
-        <Note>This workspace hasn’t been published to YouTube yet. Publish it in the Video Uploader step to see analytics.</Note>
+        <Note>This project hasn’t been published to YouTube yet. Publish it in the Video Uploader step to see analytics.</Note>
       ) : !data.video ? (
         <Note>Published, but no analytics data is available yet — check back once the video gathers views.</Note>
       ) : (

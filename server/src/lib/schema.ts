@@ -48,7 +48,7 @@ export const AudioVersion = z.object({
   voiceId: z.string().default(''),
   voiceName: z.string().default(''),
   model: z.string().default('eleven_multilingual_v2'),
-  file: z.string(), // relative to the workspace dir, e.g. "audio/v1.mp3"
+  file: z.string(), // relative to the project dir, e.g. "audio/v1.mp3"
   durationSec: z.number().default(0),
   sizeBytes: z.number().default(0),
   genTimeSec: z.number().default(0),
@@ -109,8 +109,8 @@ export const CaptionsState = z.object({
 export type CaptionsState = z.infer<typeof CaptionsState>;
 
 // A single visual asset attached to (or a candidate for) a scene. `thumbUrl` is
-// a remote preview for the candidates grid; `file` is set (workspace-relative)
-// once the asset has been downloaded/uploaded into the workspace.
+// a remote preview for the candidates grid; `file` is set (project-relative)
+// once the asset has been downloaded/uploaded into the project.
 export const AssetRef = z.object({
   origin: z.enum(['stock', 'upload', 'library']).default('stock'),
   source: z.enum(['library', 'pexels', 'pixabay', 'upload']).default('pexels'),
@@ -132,11 +132,11 @@ export const AssetRef = z.object({
 });
 export type AssetRef = z.infer<typeof AssetRef>;
 
-// A user-provided media file dropped into the workspace's asset library.
+// A user-provided media file dropped into the project's asset library.
 export const LibraryItem = z.object({
   id: z.string(),
   kind: z.enum(['image', 'video', 'audio']),
-  file: z.string(), // workspace-relative, e.g. 'library/<id>.mp4'
+  file: z.string(), // project-relative, e.g. 'library/<id>.mp4'
   name: z.string().default(''),
   sizeBytes: z.number().default(0),
   createdAt: z.string()
@@ -144,11 +144,11 @@ export const LibraryItem = z.object({
 export type LibraryItem = z.infer<typeof LibraryItem>;
 
 // A sound effect placed on the video timeline at an absolute time (copied into
-// the workspace from the global sound library).
+// the project from the global sound library).
 export const SoundPlacement = z.object({
   id: z.string(),
   name: z.string().default(''),
-  file: z.string(), // workspace-relative, e.g. 'sounds/<id>.mp3'
+  file: z.string(), // project-relative, e.g. 'sounds/<id>.mp3'
   atSec: z.number().default(0),
   durationSec: z.number().default(0),
   volume: z.number().default(1)
@@ -177,7 +177,7 @@ export const RenderRecord = z.object({
   status: z.enum(['rendering', 'completed', 'failed']).default('rendering'),
   progress: z.number().default(0), // 0..100
   phase: z.string().default('bundling'), // 'bundling' | 'rendering'
-  file: z.string().nullable().default(null), // workspace-relative mp4 once done
+  file: z.string().nullable().default(null), // project-relative mp4 once done
   durationSec: z.number().default(0),
   fps: z.number().default(30),
   resolution: z.string().default('1080×1920'),
@@ -250,7 +250,7 @@ export const Manifest = z.object({
       description: z.string().default(''),
       tags: z.array(z.string()).default([]),
       // Custom thumbnail (set on YouTube after the video uploads). File is
-      // workspace-relative (served at /media/<id>/<file>).
+      // project-relative (served at /media/<id>/<file>).
       thumbnail: z
         .object({
           file: z.string().nullable().default(null),
@@ -285,7 +285,7 @@ export const PromptTemplate = z.object({
 });
 export type PromptTemplate = z.infer<typeof PromptTemplate>;
 
-export type WorkspaceSummary = {
+export type ProjectSummary = {
   id: string;
   name: string;
   createdAt: string;

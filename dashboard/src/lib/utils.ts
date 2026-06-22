@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// URL for a workspace media file (served by the API at /media/<id>/<file>).
+// URL for a project media file (served by the API at /media/<id>/<file>).
 export function mediaUrl(id: string, file: string) {
   return `/media/${id}/${file}`;
 }

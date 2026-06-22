@@ -3,7 +3,7 @@ import multer from 'multer';
 import { ah } from '../lib/async';
 import { addSound, deleteSound, getSoundLibrary } from '../lib/sounds';
 
-// App-level (global) sound library — shared across all workspaces.
+// App-level (global) sound library — shared across all projects.
 export const soundsRouter = Router();
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });

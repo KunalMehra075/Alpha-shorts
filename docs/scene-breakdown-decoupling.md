@@ -105,7 +105,7 @@ Make the breakdown a **canonical, manifest-level artifact** instead of living in
 
 ### Backfill / backwards compatibility
 - On read, if `manifest.scenes` is empty **but** the current script version has `scenes`, backfill
-  `manifest.scenes` from it once. So existing workspaces (e.g. ones already built) keep working with
+  `manifest.scenes` from it once. So existing projects (e.g. ones already built) keep working with
   zero user action.
 - `manifest.assets.scenes` already exists and is keyed by scene number — keep aligning by number.
 
@@ -116,7 +116,7 @@ Make the breakdown a **canonical, manifest-level artifact** instead of living in
   - a **director** prompt → input is a full narration string, output is `scenes[]` only, with a hard
     rule: *segment the given narration verbatim; do not paraphrase; add visual fields only.*
   - Reuse the existing **strategy pattern** (DeepSeek → OpenAI → mock) for both.
-- **Breakdown service + route**: e.g. `POST /api/workspaces/:id/assets/breakdown` →
+- **Breakdown service + route**: e.g. `POST /api/projects/:id/assets/breakdown` →
   resolves the source (script text → else joined transcript), runs the director pass, writes
   `manifest.scenes`, returns it. (Joining the transcript = concatenate `caption.lines` / `words` text.)
 - **Store** (`server/src/lib/store.ts`): canonical `manifest.scenes` getter/setter + per-scene edit
@@ -155,9 +155,9 @@ Ans - its fine to not store scenes in script version, but confirm me if we are s
 - **All-AI path:** Script → narration; Audio (gen/mock) ; Caption; Assets → Build breakdown from
   script text → editable scenes appear → edit a duration & keywords → assign assets → Video Editor
   renders.
-- **Bring-your-own-audio path:** new workspace → skip Script → upload audio → generate captions →
+- **Bring-your-own-audio path:** new project → skip Script → upload audio → generate captions →
   Assets → Build breakdown from **transcript** → scenes appear → assign assets → render.
 - **Bring-your-own-script path:** paste narration into Script (no AI) → Assets builds breakdown from it.
-- **Backfill:** open an existing workspace that already has script `scenes` → `manifest.scenes`
+- **Backfill:** open an existing project that already has script `scenes` → `manifest.scenes`
   backfills, Assets/Video Editor work unchanged.
 - Typecheck (server + dashboard), build, and a real end-to-end render. Leave `test-e3r6po` untouched.

@@ -14,7 +14,7 @@ export type Stages = {
   upload: Stage;
 };
 
-export type WorkspaceSummary = {
+export type ProjectSummary = {
   id: string;
   name: string;
   createdAt: string;
@@ -166,7 +166,7 @@ export type SoundItem = {
 export type SoundPlacement = {
   id: string;
   name: string;
-  file: string; // workspace-relative
+  file: string; // project-relative
   atSec: number;
   durationSec: number;
   volume: number;
@@ -180,7 +180,7 @@ export type RenderTimelinePayload = {
   soundsEnabled: boolean;
 };
 
-export type Manifest = WorkspaceSummary & {
+export type Manifest = ProjectSummary & {
   category: string | null;
   hookStyle: string | null;
   script: { currentVersion: number | null; versions: ScriptVersionMeta[] };
@@ -209,7 +209,7 @@ export type YoutubeState = {
 export type YoutubeStatus = YoutubeState & { configured: boolean };
 
 export type Thumbnail = {
-  file: string | null; // workspace-relative, served at /media/<id>/<file>
+  file: string | null; // project-relative, served at /media/<id>/<file>
   source: 'asset' | 'import' | 'ai' | 'frame' | null;
   sizeBytes: number;
 };
@@ -304,7 +304,7 @@ export type ImageGenStatus = { available: boolean; providers: string[] };
 export type NeedsReauth = { needsReauth: true; message: string };
 export type WithReauth<T> = T | NeedsReauth;
 
-export type WorkspaceAnalytics =
+export type ProjectAnalytics =
   | { published: false }
   | { published: true; videoId: string; url: string; video: VideoAnalyticsRow | null };
 
@@ -359,7 +359,7 @@ export type ScriptVersionMeta = {
 export type PromptTemplate = { id: string; name: string; body: string };
 
 export type Stats = {
-  workspaces: number;
+  projects: number;
   videosGenerated: number;
   videosUploaded: number;
   totalViews: number;

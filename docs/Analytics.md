@@ -223,16 +223,16 @@ Each section should show:
 
 ---
 
-# Workspace Analytics Integration
+# Project Analytics Integration
 
-Every uploaded video should remain linked to its workspace.
+Every uploaded video should remain linked to its project.
 
 Example:
 
-Workspace:
+Project:
 "Kailasa Temple Mystery"
 
-Inside the workspace display:
+Inside the project display:
 
 * Views
 * Likes
@@ -247,7 +247,7 @@ This allows production data and performance data to live together.
 Example:
 
 ```text
-Workspace
+Project
 
 Script
 Audio

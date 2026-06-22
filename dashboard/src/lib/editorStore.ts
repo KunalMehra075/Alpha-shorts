@@ -27,7 +27,7 @@ export type MusicSettings = {
   fadeOut: boolean;
 };
 
-export type WorkspaceEditor = {
+export type ProjectEditor = {
   timeline: {
     scenes: Record<number, TimelineScene>;
     preset: string | null;
@@ -45,15 +45,15 @@ const emptyMusic = (): MusicSettings => ({
   fadeOut: true
 });
 
-const emptyEditor = (): WorkspaceEditor => ({
+const emptyEditor = (): ProjectEditor => ({
   timeline: { scenes: {}, preset: null, music: emptyMusic(), captionsEnabled: true, soundsEnabled: true }
 });
 
 // Stable reference for the "no data yet" case, so selectors don't loop in React.
-const EMPTY_EDITOR: WorkspaceEditor = emptyEditor();
+const EMPTY_EDITOR: ProjectEditor = emptyEditor();
 
 type EditorState = {
-  byWorkspace: Record<string, WorkspaceEditor>;
+  byProject: Record<string, ProjectEditor>;
 
   ensureTimeline: (id: string, scenes: Scene[]) => void;
   setSceneEffect: (id: string, i: number, effect: string) => void;
@@ -65,20 +65,20 @@ type EditorState = {
   toggleSounds: (id: string, enabled: boolean) => void;
 };
 
-// Immutably update a workspace's editor slice, creating it if missing.
+// Immutably update a project's editor slice, creating it if missing.
 function withWs(
   state: EditorState,
   id: string,
-  fn: (ws: WorkspaceEditor) => WorkspaceEditor
-): Pick<EditorState, 'byWorkspace'> {
-  const current = state.byWorkspace[id] ?? emptyEditor();
-  return { byWorkspace: { ...state.byWorkspace, [id]: fn(current) } };
+  fn: (ws: ProjectEditor) => ProjectEditor
+): Pick<EditorState, 'byProject'> {
+  const current = state.byProject[id] ?? emptyEditor();
+  return { byProject: { ...state.byProject, [id]: fn(current) } };
 }
 
 export const useEditorStore = create<EditorState>()(
   persist(
     (set) => ({
-      byWorkspace: {},
+      byProject: {},
 
       ensureTimeline: (id, scenes) =>
         set((s) =>
@@ -177,12 +177,12 @@ export const useEditorStore = create<EditorState>()(
     }),
     {
       name: 'shorts-editor',
-      partialize: (s) => ({ byWorkspace: s.byWorkspace })
+      partialize: (s) => ({ byProject: s.byProject })
     }
   )
 );
 
-// Convenience selector hook for one workspace's editor slice.
-export function useWorkspaceEditor(id: string): WorkspaceEditor {
-  return useEditorStore((s) => s.byWorkspace[id] ?? EMPTY_EDITOR);
+// Convenience selector hook for one project's editor slice.
+export function useProjectEditor(id: string): ProjectEditor {
+  return useEditorStore((s) => s.byProject[id] ?? EMPTY_EDITOR);
 }

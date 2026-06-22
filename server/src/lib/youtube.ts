@@ -1,7 +1,7 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { google } from 'googleapis';
-import { workspaceDir } from './paths';
+import { projectDir } from './paths';
 import { HttpError, getRenders, getUpload, setUploadYoutube } from './store';
 import type { RenderRecord } from './schema';
 
@@ -75,7 +75,7 @@ export function startPublish(id: string) {
 async function runPublish(id: string, render: RenderRecord) {
   try {
     const up = getUpload(id);
-    const file = join(workspaceDir(id), render.file!);
+    const file = join(projectDir(id), render.file!);
     const size = statSync(file).size;
     const youtube = ytClient();
 
@@ -113,7 +113,7 @@ async function runPublish(id: string, render: RenderRecord) {
     let thumbnailWarning: string | undefined;
     const thumb = up.thumbnail?.file;
     if (thumb) {
-      const thumbPath = join(workspaceDir(id), thumb);
+      const thumbPath = join(projectDir(id), thumb);
       if (existsSync(thumbPath)) {
         try {
           await youtube.thumbnails.set({ videoId, media: { body: createReadStream(thumbPath) } });

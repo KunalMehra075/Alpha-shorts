@@ -2,7 +2,7 @@ import { copyFileSync, statSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { customAlphabet } from 'nanoid';
 import { ensureDir } from './fsx';
-import { workspaceDir } from './paths';
+import { projectDir } from './paths';
 import { addLibraryItem, HttpError, libraryDir, readManifest } from './store';
 import { GLOBAL_MEDIA_DIR, getMediaLibrary } from './media';
 import { defaultImageGenerator } from './image';
@@ -21,7 +21,7 @@ function kindOf(name: string): LibraryItem['kind'] | null {
   return null;
 }
 
-// Save a dropped/uploaded media file into the workspace library.
+// Save a dropped/uploaded media file into the project library.
 export function addToLibrary(opts: { id: string; buffer: Buffer; originalName: string }): LibraryItem {
   const { id, buffer, originalName } = opts;
   if (!buffer?.length) throw new HttpError(400, 'Empty upload.');
@@ -33,7 +33,7 @@ export function addToLibrary(opts: { id: string; buffer: Buffer; originalName: s
   const ext = (originalName.match(/\.[A-Za-z0-9]+$/)?.[0] || '').toLowerCase();
   const itemId = shortId();
   const rel = `library/${itemId}${ext}`;
-  writeFileSync(join(workspaceDir(id), rel), buffer);
+  writeFileSync(join(projectDir(id), rel), buffer);
 
   const item: LibraryItem = {
     id: itemId,
@@ -48,10 +48,10 @@ export function addToLibrary(opts: { id: string; buffer: Buffer; originalName: s
 }
 
 // Generate an image with the AI strategy chain (Gemini → OpenAI) and add it to
-// this workspace's library. Always 9:16 to match the Short.
+// this project's library. Always 9:16 to match the Short.
 export async function generateLibraryImage(opts: { id: string; prompt: string }): Promise<LibraryItem> {
   const { id, prompt } = opts;
-  readManifest(id); // 404 if the workspace is missing
+  readManifest(id); // 404 if the project is missing
   if (!prompt?.trim()) throw new HttpError(400, 'A prompt is required.');
   let result;
   try {
@@ -63,7 +63,7 @@ export async function generateLibraryImage(opts: { id: string; prompt: string })
   return addToLibrary({ id, buffer: result.buffer, originalName: `ai-${Date.now()}${ext}` });
 }
 
-// Copy a GLOBAL media-library item into this workspace's library.
+// Copy a GLOBAL media-library item into this project's library.
 export function addToLibraryFromGlobal(opts: { id: string; itemId: string }): LibraryItem {
   const { id, itemId } = opts;
   const g = getMediaLibrary().find((m) => m.id === itemId);
@@ -72,7 +72,7 @@ export function addToLibraryFromGlobal(opts: { id: string; itemId: string }): Li
   const ext = extname(g.file) || '';
   const newId = shortId();
   const rel = `library/${newId}${ext}`;
-  const dest = join(workspaceDir(id), rel);
+  const dest = join(projectDir(id), rel);
   copyFileSync(join(GLOBAL_MEDIA_DIR, g.file), dest);
 
   const item: LibraryItem = {

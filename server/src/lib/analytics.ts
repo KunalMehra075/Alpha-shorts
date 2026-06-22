@@ -508,9 +508,9 @@ export async function getTop(range: Range) {
   };
 }
 
-// Per-workspace analytics — the published video's lifetime metrics.
-export async function getWorkspaceAnalytics(id: string) {
-  readManifest(id); // 404 if the workspace is missing
+// Per-project analytics — the published video's lifetime metrics.
+export async function getProjectAnalytics(id: string) {
+  readManifest(id); // 404 if the project is missing
   const videoId = getUpload(id).youtube.videoId;
   if (!videoId) return { published: false as const };
   requireConfigured();

@@ -1,8 +1,8 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { RootLayout } from '@/layouts/RootLayout';
-import { WorkspaceLayout } from '@/layouts/WorkspaceLayout';
+import { ProjectLayout } from '@/layouts/ProjectLayout';
 import { DashboardPage } from '@/pages/DashboardPage';
-import { WorkspacesPage } from '@/pages/WorkspacesPage';
+import { ProjectsPage } from '@/pages/ProjectsPage';
 import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { AssetsPage } from '@/pages/AssetsPage';
 import { AudiosPage } from '@/pages/AudiosPage';
@@ -13,7 +13,7 @@ import { CaptionPage } from '@/pages/CaptionPage';
 import { AssetPage } from '@/pages/AssetPage';
 import { VideoEditorPage } from '@/pages/VideoEditorPage';
 import { UploadPage } from '@/pages/UploadPage';
-import { WorkspaceAnalyticsPage } from '@/pages/WorkspaceAnalyticsPage';
+import { ProjectAnalyticsPage } from '@/pages/ProjectAnalyticsPage';
 
 export const router = createBrowserRouter([
   {
@@ -21,7 +21,7 @@ export const router = createBrowserRouter([
     element: <RootLayout />,
     children: [
       { index: true, element: <DashboardPage /> },
-      { path: 'workspaces', element: <WorkspacesPage /> },
+      { path: 'projects', element: <ProjectsPage /> },
       { path: 'analytics', element: <AnalyticsPage /> },
       { path: 'assets', element: <AssetsPage /> },
       { path: 'audios', element: <AudiosPage /> },
@@ -30,7 +30,7 @@ export const router = createBrowserRouter([
       { path: 'templates', element: <Navigate to="/prompts" replace /> },
       {
         path: 'w/:id',
-        element: <WorkspaceLayout />,
+        element: <ProjectLayout />,
         children: [
           { index: true, element: <Navigate to="script" replace /> },
           { path: 'script', element: <ScriptPage /> },
@@ -39,7 +39,7 @@ export const router = createBrowserRouter([
           { path: 'assets', element: <AssetPage /> },
           { path: 'video', element: <VideoEditorPage /> },
           { path: 'upload', element: <UploadPage /> },
-          { path: 'analytics', element: <WorkspaceAnalyticsPage /> }
+          { path: 'analytics', element: <ProjectAnalyticsPage /> }
         ]
       },
       { path: '*', element: <Navigate to="/" replace /> }

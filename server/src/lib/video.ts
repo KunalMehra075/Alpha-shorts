@@ -4,7 +4,7 @@ import { customAlphabet } from 'nanoid';
 // Engine module (plain JS from the CLI pipeline).
 import { renderVideo } from '../../../src/lib/remotion-render.js';
 import { ensureDir, existsSync, readJsonOr } from './fsx';
-import { CONFIG_DIR, ROOT, workspaceDir } from './paths';
+import { CONFIG_DIR, ROOT, projectDir } from './paths';
 import {
   HttpError,
   addRender,
@@ -18,7 +18,7 @@ import {
   getSounds,
   musicDir,
   rendersDir,
-  setWorkspaceMusic,
+  setProjectMusic,
   updateRender
 } from './store';
 import { GLOBAL_MEDIA_DIR, getMediaLibrary } from './media';
@@ -88,7 +88,7 @@ function freshStageDir() {
   mkdirSync(STAGE_DIR, { recursive: true });
 }
 
-// Copy a workspace file into the Remotion public/assets dir, returning the
+// Copy a project file into the Remotion public/assets dir, returning the
 // staticFile-relative path (forward slashes).
 function stage(absPath: string, name: string) {
   const ext = extname(absPath) || '';
@@ -106,21 +106,21 @@ export type RenderTimeline = {
 
 const MUSIC_RE = /\.(mp3|wav|m4a|aac|ogg)$/i;
 
-// Save an uploaded background-music track into the workspace.
+// Save an uploaded background-music track into the project.
 export function saveMusic(opts: { id: string; buffer: Buffer; originalName: string }) {
   const { id, buffer, originalName } = opts;
   if (!buffer?.length) throw new HttpError(400, 'Empty upload.');
   ensureDir(musicDir(id));
   const ext = (originalName.match(MUSIC_RE)?.[0] || '.mp3').toLowerCase();
   const rel = `music/track${ext}`;
-  writeFileSync(join(workspaceDir(id), rel), buffer);
-  return setWorkspaceMusic(id, { file: rel, name: originalName }).music;
+  writeFileSync(join(projectDir(id), rel), buffer);
+  return setProjectMusic(id, { file: rel, name: originalName }).music;
 }
 
 export function clearMusic(opts: { id: string }) {
   const cur = getMusic(opts.id);
-  if (cur.file) rmSync(join(workspaceDir(opts.id), cur.file), { force: true });
-  return setWorkspaceMusic(opts.id, { file: null, name: '' }).music;
+  if (cur.file) rmSync(join(projectDir(opts.id), cur.file), { force: true });
+  return setProjectMusic(opts.id, { file: null, name: '' }).music;
 }
 
 // Use a library audio item as the background-music track.
@@ -132,8 +132,8 @@ export function setMusicFromLibrary(opts: { id: string; itemId: string }) {
   ensureDir(musicDir(id));
   const ext = extname(item.file) || '.mp3';
   const rel = `music/track${ext}`;
-  copyFileSync(join(workspaceDir(id), item.file), join(workspaceDir(id), rel));
-  return setWorkspaceMusic(id, { file: rel, name: item.name }).music;
+  copyFileSync(join(projectDir(id), item.file), join(projectDir(id), rel));
+  return setProjectMusic(id, { file: rel, name: item.name }).music;
 }
 
 // Use a GLOBAL media-library audio item as the background-music track.
@@ -145,8 +145,8 @@ export function setMusicFromGlobal(opts: { id: string; itemId: string }) {
   ensureDir(musicDir(id));
   const ext = extname(item.file) || '.mp3';
   const rel = `music/track${ext}`;
-  copyFileSync(join(GLOBAL_MEDIA_DIR, item.file), join(workspaceDir(id), rel));
-  return setWorkspaceMusic(id, { file: rel, name: item.name }).music;
+  copyFileSync(join(GLOBAL_MEDIA_DIR, item.file), join(projectDir(id), rel));
+  return setProjectMusic(id, { file: rel, name: item.name }).music;
 }
 
 // Build the Remotion composition inputProps from the user's manifest choices +
@@ -179,10 +179,10 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
     let effect: string | null = null;
     let animationKind: string | null = null;
 
-    if (selected?.file && existsSync(join(workspaceDir(id), selected.file))) {
+    if (selected?.file && existsSync(join(projectDir(id), selected.file))) {
       const kind = selected.kind === 'video' ? 'video' : 'image';
       visualType = kind;
-      const src = stage(join(workspaceDir(id), selected.file), `scene-${i}`);
+      const src = stage(join(projectDir(id), selected.file), `scene-${i}`);
       const asset: { type: string; src: string; trimStartFrames?: number; trimEndFrames?: number } = { type: kind, src };
       // Video trim window → frame offsets for Remotion's OffthreadVideo.
       if (kind === 'video' && (selected.trimStartSec || selected.trimEndSec != null)) {
@@ -216,7 +216,7 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
   let narration: string | null = null;
   if (audio.currentVersion != null) {
     const take = audio.versions.find((v) => v.version === audio.currentVersion);
-    const abs = take && join(workspaceDir(id), take.file);
+    const abs = take && join(projectDir(id), take.file);
     if (abs && existsSync(abs)) narration = stage(abs, 'narration');
   }
 
@@ -225,12 +225,12 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
       ? { enabled: true, lines: caps.lines, settings: caps.settings }
       : null;
 
-  // Background music: staged from the workspace track when enabled.
+  // Background music: staged from the project track when enabled.
   let music: { src: string; volume: number; fadeIn: boolean; fadeOut: boolean } | null = null;
   const mus = getMusic(id);
-  if (timeline.music?.enabled && mus.file && existsSync(join(workspaceDir(id), mus.file))) {
+  if (timeline.music?.enabled && mus.file && existsSync(join(projectDir(id), mus.file))) {
     music = {
-      src: stage(join(workspaceDir(id), mus.file), 'music'),
+      src: stage(join(projectDir(id), mus.file), 'music'),
       volume: Math.max(0, Math.min(1, (timeline.music.volume ?? 30) / 100)),
       fadeIn: !!timeline.music.fadeIn,
       fadeOut: !!timeline.music.fadeOut
@@ -241,9 +241,9 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
   let sounds: { src: string; atSec: number; volume: number }[] = [];
   if (timeline.soundsEnabled !== false) {
     sounds = getSounds(id)
-      .filter((p) => existsSync(join(workspaceDir(id), p.file)))
+      .filter((p) => existsSync(join(projectDir(id), p.file)))
       .map((p, i) => ({
-        src: stage(join(workspaceDir(id), p.file), `sound-${i}`),
+        src: stage(join(projectDir(id), p.file), `sound-${i}`),
         atSec: p.atSec,
         volume: p.volume ?? 1
       }));
@@ -306,7 +306,7 @@ async function runRender(id: string, rid: string, timeline: RenderTimeline) {
     const cfg = inputProps._config;
     ensureDir(rendersDir(id));
     const rel = `renders/render-${rid}.mp4`;
-    const outPath = join(workspaceDir(id), rel);
+    const outPath = join(projectDir(id), rel);
 
     await renderVideo({
       inputProps,

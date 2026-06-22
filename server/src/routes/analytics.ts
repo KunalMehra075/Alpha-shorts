@@ -10,7 +10,7 @@ import {
   getTimeseries,
   getTop,
   getVideos,
-  getWorkspaceAnalytics
+  getProjectAnalytics
 } from '../lib/analytics';
 import {
   buildAuthUrl,
@@ -151,10 +151,10 @@ analyticsRouter.get('/oauth/result', (req, res) => {
   res.json(t ? { refreshToken: t } : { pending: true });
 });
 
-// ── Per-workspace analytics, mounted at /api/workspaces/:id/analytics ──────────
-export const workspaceAnalyticsRouter = Router({ mergeParams: true });
+// ── Per-project analytics, mounted at /api/projects/:id/analytics ──────────
+export const projectAnalyticsRouter = Router({ mergeParams: true });
 
-workspaceAnalyticsRouter.get(
+projectAnalyticsRouter.get(
   '/',
-  ah((req: any, res) => reauthGuard(res, () => getWorkspaceAnalytics(req.params.id)))
+  ah((req: any, res) => reauthGuard(res, () => getProjectAnalytics(req.params.id)))
 );

@@ -10,7 +10,7 @@ import { HttpError } from './store';
 const shortId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 10);
 
 // Global, app-level media library (images / videos / music) shared across all
-// workspaces. Sibling of the global sound library (see ./sounds.ts).
+// projects. Sibling of the global sound library (see ./sounds.ts).
 export const GLOBAL_MEDIA_DIR = join(ROOT, 'media-library');
 const INDEX = join(GLOBAL_MEDIA_DIR, 'library.json');
 

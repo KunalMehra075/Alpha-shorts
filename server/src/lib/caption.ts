@@ -6,7 +6,7 @@ import { basename, extname, join } from 'node:path';
 import { buildAss } from '../../../src/lib/ass-generator.js';
 import { getDuration } from '../../../src/lib/ffmpeg.js';
 import { ensureDir } from './fsx';
-import { workspaceDir } from './paths';
+import { projectDir } from './paths';
 import { HttpError, captionsDir, getAudioState, getCaptions, setCaptions } from './store';
 import type { CaptionLine, CaptionSettings } from './schema';
 
@@ -186,7 +186,7 @@ function currentAudioPath(id: string): string {
     throw new HttpError(400, 'No audio yet — generate narration in the Audio tab first.');
   }
   const take = audio.versions.find((v) => v.version === audio.currentVersion)!;
-  return join(workspaceDir(id), take.file);
+  return join(projectDir(id), take.file);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -248,7 +248,7 @@ export function saveCaptions(opts: { id: string; settings: CaptionSettings; line
 
 /**
  * Render the caption overlay as two web-playable .mp4s — "normal" (on black) and
- * "greenscreen" (on green) — each with the workspace's current narration audio
+ * "greenscreen" (on green) — each with the project's current narration audio
  * muxed in, so they preview in-browser exactly as they'll sound. Requires both a
  * transcript and generated audio.
  */
@@ -302,8 +302,8 @@ export async function renderCaptionOverlay(opts: { id: string }) {
 
   const normalRel = 'captions/overlay-normal.mp4';
   const greenRel = 'captions/overlay-green.mp4';
-  const normalPath = join(workspaceDir(id), normalRel);
-  const greenPath = join(workspaceDir(id), greenRel);
+  const normalPath = join(projectDir(id), normalRel);
+  const greenPath = join(projectDir(id), greenRel);
 
   try {
     await renderColorMp4({ assPath, bgHex: '#000000', audioPath, outPath: normalPath, durationSec });

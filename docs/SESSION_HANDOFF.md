@@ -26,7 +26,7 @@ The dashboard is the focus. The CLI engine is mostly reused by the dashboard ser
   Routing via react-router; server state via TanStack Query; light cross-page state via
   **zustand** (`editorStore`, persisted to localStorage).
 - **Backend** `server/` — Express (TS via `tsx`). Filesystem persistence: one folder per
-  workspace under `workspaces/<id>/` with a `workspace.json` manifest + media files.
+  project under `projects/<id>/` with a `project.json` manifest + media files.
   Reuses the CLI engine JS modules via ambient decls (`server/src/engine.d.ts`,
   imports like `../../../src/lib/elevenlabs.js`).
 - **Run:** `npm run dash` (root) → Express on **:8787**, Vite on **:5173** (proxies
@@ -37,15 +37,15 @@ The dashboard is the focus. The CLI engine is mostly reused by the dashboard ser
 - `dashboard/src/layouts/RootLayout.tsx` renders a **collapsible sidebar** (expanded ~220px with
   labels, or 68px icon-rail; toggle persisted at localStorage `shorts-sidebar-collapsed`, default
   expanded) with 6 sections wired in `router.tsx`: **Dashboard** (`/` `DashboardPage` — stats +
-  placeholder graph cards + recents), **Workspaces** (`/workspaces` `WorkspacesPage` — 3 stat cards
-  Total/Completed/Pending + Table|Card view toggle persisted at `shorts-workspaces-view`, default
+  placeholder graph cards + recents), **Projects** (`/projects` `ProjectsPage` — 3 stat cards
+  Total/Completed/Pending + Table|Card view toggle persisted at `shorts-projects-view`, default
   table), **Analytics** (`/analytics` — blank placeholder), **Assets** (`/assets` `AssetsPage` —
   global Images/Videos tabs, card grid), **Audios** (`/audios` `AudiosPage` — Music/Sounds tabs),
-  **Prompts** (`/prompts` `PromptsPage`, was `/templates` → now redirects). Shared workspace
-  card/table/dialogs live in `components/WorkspaceUI.tsx`; `components/StatCard.tsx` is shared.
+  **Prompts** (`/prompts` `PromptsPage`, was `/templates` → now redirects). Shared project
+  card/table/dialogs live in `components/ProjectUI.tsx`; `components/StatCard.tsx` is shared.
   (`HomePage.tsx`/`TemplatesPage.tsx` were removed.)
 
-### Global libraries (app-level, NOT workspace-scoped)
+### Global libraries (app-level, NOT project-scoped)
 - **Sounds** (SFX tones): `server/src/lib/sounds.ts` → `<ROOT>/sounds/` + `library.json`, served
   `/sounds`, API `/api/sounds`; 5 samples auto-seed on first GET.
 - **Media** (images/videos/music): `server/src/lib/media.ts` + `routes/media.ts` →
@@ -63,7 +63,7 @@ The dashboard is the focus. The CLI engine is mostly reused by the dashboard ser
   routes (`/w/:id/:tab`). Adding/splitting a step = update schema `stages` (+`emptyStages`),
   `types.ts`, `router.tsx`, and add a page.
 - Per-stage backend: nested routers `server/src/routes/{script,audio,caption}.ts` mounted in
-  `routes/workspaces.ts` under `/api/workspaces/:id/<stage>`; per-stage store mutators
+  `routes/projects.ts` under `/api/projects/:id/<stage>`; per-stage store mutators
   (`setCaptions`, `addAudioVersion`, …). API client + hooks: `dashboard/src/lib/{api,queries}.ts`.
 
 ---
@@ -75,11 +75,11 @@ The dashboard is the focus. The CLI engine is mostly reused by the dashboard ser
 | 1 | Script Generator | `script` | **Functional.** LLM via **strategy pattern** (`server/src/lib/llm/`): DeepSeek → OpenAI → mock fallback. Master prompt owns the JSON output contract; prompt templates are creative briefs that extend it. Versioning + restore. |
 | 2 | Audio Generator | `audio` | **Functional.** Real ElevenLabs (`generateTake`), voices in `config/voices.json` (Allison/Kanika), model `eleven_multilingual_v2`. Upload, history, real player, ffprobe duration. |
 | 3 | Caption Maker | `caption` | **Functional.** Whisper transcription → editable lines/SRT/JSON; style (incl. 0–100 vertical position slider); renders **two playable mp4s** (normal black + green) with narration audio muxed; live CSS preview; render uses edited lines + flushes settings + cache-busts video. |
-| 4 | Assets | `assets` | **Functional + media library + manual scene builder.** Unified scene builder with two entry points in the empty state: **Generate with AI** (`buildBreakdown`) or **Build manually** (no script needed). Both modes support **Add Scene** (full-width row + header button → Add-Scene modal: Local workspace library + Global media tabs + **Import** = workspace upload; pick an image → 3s scene, pick a video → **trim step** 0.5–60s), per-row **remove**, and per-scene **video trim** (right-bar duration edits videos by trimming from the end). Manual mode hides the Spoken Line/Keywords columns + script-only inspector fields. Backend: `addScene`/`removeScene` (`store.ts`, renumbers scenes + asset rows in lockstep; `selected.file` paths are stable, not renamed), `selectSceneFromGlobal`/`setSceneTrim`/`addSceneFromMedia` (`assets.ts`/`scenes.ts`), routes `POST /scenes` · `POST /scenes/from-media` · `DELETE /scenes/:scene` · `PUT /assets/:scene/trim`. `AssetRef` gained `sourceDurationSec`/`trimStartSec`/`trimEndSec`; the render honors trim via Remotion `OffthreadVideo` `startFrom`/`endAt` (`remotion/scenes/VideoScene.jsx`, frame offsets from `video.ts`). _Plus the original:_ Drag-and-drop (or "Add media") images/videos/audio into a per-workspace **library** (`manifest.library`, `server/src/lib/library.ts`, `routes/library.ts`); click a library image/video → modal → "Add to selected scene" (`/assets/:scene/select-library`). Audio library items feed the Video Editor's background music (`/video/music/from-library`). Plus: Per-scene stock search via the engine (`searchAssets` → Pexels/Pixabay/library, gated on `PEXELS_API_KEY`/`PIXABAY_API_KEY`), select → downloads the file into `workspaces/<id>/assets/` (served via `/media`), manual upload, "Auto-fill all", Asset Library. Persisted to the **manifest** `assets` section (`server/src/lib/assets.ts` + `routes/assets.ts`). No AI-gen yet (Image Prompt is saved for later). |
-| 5 | Video Editor | `video` | **Functional render + sound effects.** Auto timeline + presets + transition icons + scene settings + CSS scrubber preview (reads real assets/captions). Audio panel redesigned: **Narration + Captions side by side**, a **Background music** row, and an **Add Sounds** panel (toggle + search + draggable sound chips). "Create Video" runs a **real Remotion render** as a background job (`server/src/lib/video.ts` + `routes/video.ts`): builds `inputProps` from the manifest assets + editor timeline + captions + placed sounds, reuses the engine's `renderVideo()`/`ShortsVideo` composition, and writes an MP4 to `workspaces/<id>/renders/` (served via `/media`). UI **polls** `useRenders` for live progress; gallery plays/downloads/deletes real renders. Captions composite via a Remotion layer (`remotion/components/Captions.jsx`); sounds mix via a `SoundLayer` (`Sequence`+`Audio`) in `remotion/Video.jsx`. Timeline tweaks live in zustand `editorStore` (sent in the render request); background music deferred. |
+| 4 | Assets | `assets` | **Functional + media library + manual scene builder.** Unified scene builder with two entry points in the empty state: **Generate with AI** (`buildBreakdown`) or **Build manually** (no script needed). Both modes support **Add Scene** (full-width row + header button → Add-Scene modal: Local project library + Global media tabs + **Import** = project upload; pick an image → 3s scene, pick a video → **trim step** 0.5–60s), per-row **remove**, and per-scene **video trim** (right-bar duration edits videos by trimming from the end). Manual mode hides the Spoken Line/Keywords columns + script-only inspector fields. Backend: `addScene`/`removeScene` (`store.ts`, renumbers scenes + asset rows in lockstep; `selected.file` paths are stable, not renamed), `selectSceneFromGlobal`/`setSceneTrim`/`addSceneFromMedia` (`assets.ts`/`scenes.ts`), routes `POST /scenes` · `POST /scenes/from-media` · `DELETE /scenes/:scene` · `PUT /assets/:scene/trim`. `AssetRef` gained `sourceDurationSec`/`trimStartSec`/`trimEndSec`; the render honors trim via Remotion `OffthreadVideo` `startFrom`/`endAt` (`remotion/scenes/VideoScene.jsx`, frame offsets from `video.ts`). _Plus the original:_ Drag-and-drop (or "Add media") images/videos/audio into a per-project **library** (`manifest.library`, `server/src/lib/library.ts`, `routes/library.ts`); click a library image/video → modal → "Add to selected scene" (`/assets/:scene/select-library`). Audio library items feed the Video Editor's background music (`/video/music/from-library`). Plus: Per-scene stock search via the engine (`searchAssets` → Pexels/Pixabay/library, gated on `PEXELS_API_KEY`/`PIXABAY_API_KEY`), select → downloads the file into `projects/<id>/assets/` (served via `/media`), manual upload, "Auto-fill all", Asset Library. Persisted to the **manifest** `assets` section (`server/src/lib/assets.ts` + `routes/assets.ts`). No AI-gen yet (Image Prompt is saved for later). |
+| 5 | Video Editor | `video` | **Functional render + sound effects.** Auto timeline + presets + transition icons + scene settings + CSS scrubber preview (reads real assets/captions). Audio panel redesigned: **Narration + Captions side by side**, a **Background music** row, and an **Add Sounds** panel (toggle + search + draggable sound chips). "Create Video" runs a **real Remotion render** as a background job (`server/src/lib/video.ts` + `routes/video.ts`): builds `inputProps` from the manifest assets + editor timeline + captions + placed sounds, reuses the engine's `renderVideo()`/`ShortsVideo` composition, and writes an MP4 to `projects/<id>/renders/` (served via `/media`). UI **polls** `useRenders` for live progress; gallery plays/downloads/deletes real renders. Captions composite via a Remotion layer (`remotion/components/Captions.jsx`); sounds mix via a `SoundLayer` (`Sequence`+`Audio`) in `remotion/Video.jsx`. Timeline tweaks live in zustand `editorStore` (sent in the render request); background music deferred. |
 | 6 | Video Uploader | `upload` | **Functional.** Real AI SEO (LLM strategy — `server/src/lib/seo.ts`); metadata persisted to `manifest.upload`; **real YouTube upload** of the latest completed render via Google OAuth2 + Data API v3 (`server/src/lib/youtube.ts`, `googleapis`), as a background job with live progress. Needs `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REFRESH_TOKEN` in `.env` (UI shows a "not connected" state until set). Ported from the user's `youbute-uploader` project. |
 
-Dashboard Home (`HomePage`): workspace CRUD, recents, placeholder stats.
+Dashboard Home (`HomePage`): project CRUD, recents, placeholder stats.
 
 ---
 
@@ -87,10 +87,10 @@ Dashboard Home (`HomePage`): workspace CRUD, recents, placeholder stats.
 
 - Backend: `server/src/lib/{schema,store,audio,caption,voices,paths,fsx,sounds}.ts`,
   `server/src/lib/llm/*`, `server/src/routes/*`, `server/src/index.ts`.
-- **Sound effects (global library):** `server/src/lib/sounds.ts` (app-level, NOT workspace-scoped;
+- **Sound effects (global library):** `server/src/lib/sounds.ts` (app-level, NOT project-scoped;
   files in `<ROOT>/sounds/` + `library.json` index, served at `/sounds`), `server/src/routes/sounds.ts`
   (`/api/sounds` GET/POST/DELETE). Per-video placements: `manifest.sounds[]` (copy-on-place into
-  `workspaces/<id>/sounds/`, anchored by absolute `atSec`), routes under `/api/workspaces/:id/video/sounds`.
+  `projects/<id>/sounds/`, anchored by absolute `atSec`), routes under `/api/projects/:id/video/sounds`.
   Frontend: native HTML5 drag-and-drop of chips onto a Sound-effects track below the timeline; 5 sample
   tones auto-seed via ffmpeg on first `GET /api/sounds`. A dedicated "Manage Sounds" page is deferred.
 - Engine (reused): `src/lib/{elevenlabs,whisper,ass-generator,ffmpeg,assets,asset-cache,timeline,remotion-render}.js`, `remotion/*`.
@@ -125,15 +125,15 @@ Dashboard Home (`HomePage`): workspace CRUD, recents, placeholder stats.
 - **Verify by running**: typecheck (`npm run typecheck` in server + dashboard) + `npm run build`
   (dashboard), then boot + real smoke test, then a headless-Chrome **screenshot** for UI work
   (`puppeteer-core` installed temporarily, system Chrome at `/Applications/Google Chrome.app`,
-  uninstalled + screenshots/test workspaces cleaned up after). Theme set via
+  uninstalled + screenshots/test projects cleaned up after). Theme set via
   `localStorage.setItem('shorts-theme','dark')`.
 - **Stale-server gotcha**: a prior `tsx` server often stays bound to :8787. Before smoke tests,
   `pkill -f tsx` and confirm `0`, then restart — otherwise you test OLD code (bit us repeatedly).
 - **rtk shell proxy** truncates large piped output (you'll see `(N bytes total)` + a JSON parse
   error in inline `node -e`); write responses to a file and read fields instead.
-- Leave the user-created workspaces untouched when cleaning test data — currently
+- Leave the user-created projects untouched when cleaning test data — currently
   **`test-e3r6po`, `blackhole-fact-2y66tu`, `test-nom-dbw10z`, `tenst-a3b2rq`** (create your own
-  throwaway workspace for smoke tests and delete only that).
+  throwaway project for smoke tests and delete only that).
 - Some files were hand-edited by the user (Stepper.tsx, VideoPage→removed, config.js debug logs,
   `.env`/`.env.example`, VideoEditorPage). Don't revert intentional user changes.
 

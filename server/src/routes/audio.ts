@@ -29,7 +29,7 @@ const pid = (req: any) => req.params.id as string;
 audioRouter.get(
   '/',
   ah((req, res) => {
-    readManifest(pid(req)); // 404 if workspace missing
+    readManifest(pid(req)); // 404 if project missing
     res.json(getAudioState(pid(req)));
   })
 );

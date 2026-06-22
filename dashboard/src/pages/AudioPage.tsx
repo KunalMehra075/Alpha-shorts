@@ -28,11 +28,11 @@ import {
   useUploadAudio,
   useVoices
 } from '@/lib/queries';
-import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
+import { useProjectCtx } from '@/layouts/ProjectLayout';
 import { formatBytes, formatDuration } from '@/lib/mockMedia';
 
 export function AudioPage() {
-  const { workspace, id } = useWorkspaceCtx();
+  const { project, id } = useProjectCtx();
   const { data: script } = useScript(id);
   const { data: voices } = useVoices();
   const { data: audio } = useAudio(id);
@@ -49,12 +49,12 @@ export function AudioPage() {
   const speed = speedPct / 100;
   const fileInput = useRef<HTMLInputElement>(null);
 
-  // Default the voice to one matching the workspace language.
+  // Default the voice to one matching the project language.
   useEffect(() => {
     if (!voices?.length || voiceId) return;
-    const match = voices.find((v) => v.language === workspace.language);
+    const match = voices.find((v) => v.language === project.language);
     setVoiceId((match ?? voices[0]).id);
-  }, [voices, voiceId, workspace.language]);
+  }, [voices, voiceId, project.language]);
 
   const words = script?.voiceoverScript?.trim()
     ? script.voiceoverScript.trim().split(/\s+/).length
@@ -91,7 +91,7 @@ export function AudioPage() {
         icon={AudioLines}
         title="Audio Generator"
         description="Turn your script into narration with ElevenLabs."
-        status={workspace.stages.audio.status}
+        status={project.stages.audio.status}
       />
 
       <input

@@ -5,7 +5,7 @@ import { searchAssets, searchAsset } from '../../../src/lib/assets.js';
 import { downloadFirstFitting } from '../../../src/lib/asset-cache.js';
 import { getDuration } from '../../../src/lib/ffmpeg.js';
 import { ensureDir, readJsonOr } from './fsx';
-import { CONFIG_DIR, workspaceDir } from './paths';
+import { CONFIG_DIR, projectDir } from './paths';
 import {
   HttpError,
   assetsDir,
@@ -111,8 +111,8 @@ export async function searchScene(opts: {
   return getAssetsState(id);
 }
 
-// Download (stock) or copy (library) the chosen asset into the workspace, then
-// mark it selected with a workspace-relative `file` path served via /media.
+// Download (stock) or copy (library) the chosen asset into the project, then
+// mark it selected with a project-relative `file` path served via /media.
 export async function selectScene(opts: {
   id: string;
   sceneNumber: number;
@@ -135,14 +135,14 @@ export async function selectScene(opts: {
         config: assetConfig()
       });
       const rel = `assets/scene-${sceneNumber}${extFor(ref.kind, path)}`;
-      copyFileSync(path, join(workspaceDir(id), rel));
+      copyFileSync(path, join(projectDir(id), rel));
       file = rel;
-      sizeBytes = statSync(join(workspaceDir(id), rel)).size;
+      sizeBytes = statSync(join(projectDir(id), rel)).size;
     } else if (ref.libraryPath) {
       const rel = `assets/scene-${sceneNumber}${extFor(ref.kind, ref.libraryPath)}`;
-      copyFileSync(ref.libraryPath, join(workspaceDir(id), rel));
+      copyFileSync(ref.libraryPath, join(projectDir(id), rel));
       file = rel;
-      sizeBytes = statSync(join(workspaceDir(id), rel)).size;
+      sizeBytes = statSync(join(projectDir(id), rel)).size;
     }
   } catch (err: any) {
     throw new HttpError(502, `Could not fetch asset: ${err?.message ?? err}`);
@@ -151,7 +151,7 @@ export async function selectScene(opts: {
   // For videos, probe the full source length so the trim UI/clamp has a ceiling.
   let sourceDurationSec = ref.sourceDurationSec ?? 0;
   if (ref.kind === 'video' && file) {
-    sourceDurationSec = await probeDuration(join(workspaceDir(id), file));
+    sourceDurationSec = await probeDuration(join(projectDir(id), file));
   }
 
   const selected: AssetRef = { ...ref, file, sizeBytes, sourceDurationSec };
@@ -162,7 +162,7 @@ export function clearScene(opts: { id: string; sceneNumber: number }) {
   return setSceneAssets(opts.id, opts.sceneNumber, { selected: null });
 }
 
-// Assign a library image/video to a scene (copies it into the workspace assets).
+// Assign a library image/video to a scene (copies it into the project assets).
 export async function selectSceneFromLibrary(opts: { id: string; sceneNumber: number; itemId: string }) {
   const { id, sceneNumber, itemId } = opts;
   const item = getLibrary(id).find((i) => i.id === itemId);
@@ -180,7 +180,7 @@ export async function selectSceneFromLibrary(opts: { id: string; sceneNumber: nu
     thumbUrl: '',
     downloadUrl: null,
     downloadUrls: [],
-    libraryPath: join(workspaceDir(id), item.file),
+    libraryPath: join(projectDir(id), item.file),
     file: null,
     sizeBytes: 0,
     sourceDurationSec: 0,
@@ -190,7 +190,7 @@ export async function selectSceneFromLibrary(opts: { id: string; sceneNumber: nu
   return selectScene({ id, sceneNumber, ref });
 }
 
-// Generate an image (AI chain) into the workspace library AND select it for the
+// Generate an image (AI chain) into the project library AND select it for the
 // scene — one backend call. Returns the new library item + updated assets state.
 export async function generateSceneImage(opts: { id: string; sceneNumber: number; prompt: string }) {
   const { id, sceneNumber, prompt } = opts;
@@ -200,7 +200,7 @@ export async function generateSceneImage(opts: { id: string; sceneNumber: number
 }
 
 // Assign a GLOBAL media-library image/video to a scene (copies it into the
-// workspace assets). Mirrors selectSceneFromLibrary but resolves from the
+// project assets). Mirrors selectSceneFromLibrary but resolves from the
 // app-level media library (server/src/lib/media.ts).
 export async function selectSceneFromGlobal(opts: { id: string; sceneNumber: number; itemId: string }) {
   const { id, sceneNumber, itemId } = opts;
@@ -247,7 +247,7 @@ export async function setSceneTrim(opts: {
   const source =
     selected.sourceDurationSec && selected.sourceDurationSec > 0
       ? selected.sourceDurationSec
-      : await probeDuration(join(workspaceDir(id), selected.file));
+      : await probeDuration(join(projectDir(id), selected.file));
 
   let start = Math.max(0, opts.trimStartSec);
   let end = opts.trimEndSec;
@@ -295,7 +295,7 @@ export function uploadScene(opts: {
   const kind: 'video' | 'image' = VIDEO_RE.test(originalName) ? 'video' : 'image';
   const ext = (originalName.match(MEDIA_RE)?.[0] || (kind === 'video' ? '.mp4' : '.jpg')).toLowerCase();
   const rel = `assets/scene-${sceneNumber}${ext}`;
-  writeFileSync(join(workspaceDir(id), rel), buffer);
+  writeFileSync(join(projectDir(id), rel), buffer);
 
   const selected: AssetRef = {
     origin: 'upload',

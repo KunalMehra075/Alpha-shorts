@@ -32,19 +32,19 @@ import {
   useRenderCaptionOverlay,
   useSaveCaptions
 } from '@/lib/queries';
-import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
+import { useProjectCtx } from '@/layouts/ProjectLayout';
 import type { CaptionLine, CaptionMedia, CaptionSettings, Language } from '@/lib/types';
 
 const FONTS = ['Inter', 'Arial', 'Impact', 'Montserrat', 'Poppins', 'Bebas Neue', 'Noto Sans Devanagari'];
 
 export function CaptionPage() {
-  const { workspace, id } = useWorkspaceCtx();
+  const { project, id } = useProjectCtx();
   const { data: caps } = useCaptions(id);
   const generate = useGenerateCaptions(id);
   const save = useSaveCaptions(id);
   const render = useRenderCaptionOverlay(id);
 
-  const [language, setLanguage] = useState<Language>(workspace.language);
+  const [language, setLanguage] = useState<Language>(project.language);
   const [settings, setSettings] = useState<CaptionSettings | null>(null);
   const [lines, setLines] = useState<CaptionLine[]>([]);
   const [dirty, setDirty] = useState(false);
@@ -52,7 +52,7 @@ export function CaptionPage() {
 
   useEffect(() => {
     if (!caps) return;
-    setLanguage((caps.language || workspace.language) as Language);
+    setLanguage((caps.language || project.language) as Language);
     setSettings(caps.settings);
     setLines(caps.lines);
     setDirty(false);
@@ -142,7 +142,7 @@ export function CaptionPage() {
         icon={Captions}
         title="Caption Maker"
         description="Transcribe audio with Whisper and style your captions."
-        status={workspace.stages.caption.status}
+        status={project.stages.caption.status}
         actions={dirty ? <span className="text-xs text-muted-foreground">Saving…</span> : undefined}
       />
 

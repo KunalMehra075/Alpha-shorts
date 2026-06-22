@@ -78,7 +78,7 @@ export function PromptsPage() {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight">Prompts</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Reusable AI prompts you can load into any workspace's Script Generator.
+            Reusable AI prompts you can load into any project's Script Generator.
           </p>
         </div>
         <Button variant="primary" onClick={create}>

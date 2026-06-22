@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { generateAudio } from '../../../src/lib/elevenlabs.js';
 import { getDuration } from '../../../src/lib/ffmpeg.js';
 import { ensureDir } from './fsx';
-import { workspaceDir } from './paths';
+import { projectDir } from './paths';
 import {
   HttpError,
   addAudioVersion,
@@ -102,7 +102,7 @@ export async function generateTake(opts: {
   const version = nextAudioVersion(id);
   ensureDir(audioDir(id));
   const rel = `audio/v${version}.mp3`;
-  const outPath = join(workspaceDir(id), rel);
+  const outPath = join(projectDir(id), rel);
 
   const t0 = Date.now();
   try {
@@ -149,7 +149,7 @@ export async function saveUploadedTake(opts: {
   ensureDir(audioDir(id));
   const ext = (originalName.match(/\.(mp3|wav|m4a|aac|ogg)$/i)?.[0] || '.mp3').toLowerCase();
   const rel = `audio/v${version}${ext}`;
-  const outPath = join(workspaceDir(id), rel);
+  const outPath = join(projectDir(id), rel);
   writeFileSync(outPath, buffer);
 
   await applySpeed(outPath, speed);

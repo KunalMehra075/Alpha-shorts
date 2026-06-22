@@ -54,7 +54,7 @@ import {
   useUploadThumbnail,
   useYoutubeStatus
 } from '@/lib/queries';
-import { useWorkspaceCtx } from '@/layouts/WorkspaceLayout';
+import { useProjectCtx } from '@/layouts/ProjectLayout';
 import type { LibraryItem, MediaItem, SeoSuggestions } from '@/lib/types';
 
 type Visibility = 'public' | 'unlisted' | 'private';
@@ -74,15 +74,15 @@ const VISIBILITY: { id: Visibility; label: string; icon: React.ComponentType<{ c
 ];
 
 export function UploadPage() {
-  const { workspace, id } = useWorkspaceCtx();
+  const { project, id } = useProjectCtx();
   const saveUpload = useSaveUpload(id);
   const genSeoMut = useGenerateSeo(id);
 
-  const [platform, setPlatform] = useState(workspace.upload.platform || 'youtube');
-  const [visibility, setVisibility] = useState<Visibility>(workspace.upload.visibility);
-  const [title, setTitle] = useState(workspace.upload.title);
-  const [description, setDescription] = useState(workspace.upload.description);
-  const [tags, setTags] = useState<string[]>(workspace.upload.tags);
+  const [platform, setPlatform] = useState(project.upload.platform || 'youtube');
+  const [visibility, setVisibility] = useState<Visibility>(project.upload.visibility);
+  const [title, setTitle] = useState(project.upload.title);
+  const [description, setDescription] = useState(project.upload.description);
+  const [tags, setTags] = useState<string[]>(project.upload.tags);
   const [tagInput, setTagInput] = useState('');
   const [seo, setSeo] = useState<SeoSuggestions | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -90,7 +90,7 @@ export function UploadPage() {
   const [thumbOpen, setThumbOpen] = useState(false);
 
   // Seed from the server's upload metadata once (reflects the public-default
-  // backfill for untouched workspaces).
+  // backfill for untouched projects).
   const { data: upload } = useUpload(id);
   const seededRef = useRef(false);
   useEffect(() => {
@@ -190,7 +190,7 @@ export function UploadPage() {
         icon={UploadIcon}
         title="Video Uploader"
         description="Prepare SEO and publish your Short."
-        status={workspace.stages.upload.status}
+        status={project.stages.upload.status}
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_1fr]">
@@ -768,13 +768,13 @@ function ThumbnailPicker({
             />
             <div className="flex flex-col gap-1.5">
               <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Workspace library ({filtWs.length})
+                Project library ({filtWs.length})
               </p>
               <Grid
                 items={filtWs}
                 src={(m) => `/media/${id}/${m.file}`}
                 onPick={(m) => pickAsset('library', m.id)}
-                empty="No images in this workspace’s library."
+                empty="No images in this project’s library."
               />
             </div>
             <div className="flex flex-col gap-1.5">

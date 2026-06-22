@@ -34,7 +34,7 @@ const FromMediaBody = z.object({
 scenesRouter.get(
   '/',
   ah((req, res) => {
-    readManifest(pid(req)); // 404 if workspace missing
+    readManifest(pid(req)); // 404 if project missing
     res.json(getScenes(pid(req)));
   })
 );

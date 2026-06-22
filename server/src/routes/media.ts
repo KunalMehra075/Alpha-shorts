@@ -4,7 +4,7 @@ import { ah } from '../lib/async';
 import { addMedia, deleteMedia, getMediaLibrary, type MediaKind } from '../lib/media';
 
 // App-level (global) media library — images / videos / music shared across all
-// workspaces.
+// projects.
 export const mediaRouter = Router();
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });

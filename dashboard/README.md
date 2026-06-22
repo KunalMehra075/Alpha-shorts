@@ -27,9 +27,9 @@ npm run dash:web      # Vite dev server on :5173 (proxies /api + /media)
 
 - Light/dark theme, strict white/black/red/gray palette, glossy red-gradient
   primary buttons.
-- Workspace system: create / rename / duplicate / delete / open, persisted to
-  `workspaces/<id>/workspace.json`.
-- Dashboard Home: workspace cards, recents, placeholder stats.
+- Project system: create / rename / duplicate / delete / open, persisted to
+  `projects/<id>/project.json`.
+- Dashboard Home: project cards, recents, placeholder stats.
 - **Script Generator** (fully built against mock generation): prompt editor +
   templates, topic, generate, editable voiceover + scene breakdown, autosave,
   and version history with restore.
@@ -41,12 +41,12 @@ npm run dash:web      # Vite dev server on :5173 (proxies /api + /media)
 ```
 dashboard/   Vite React app (this folder)
 server/      Express API (../server)
-workspaces/  persisted workspace data (../workspaces, gitignored)
+projects/  persisted project data (../projects, gitignored)
 config/prompt-templates.json   global prompt templates
 ```
 
 ## Environment
 
 - `DASH_PORT` (default 8787) — API port
-- `DASH_WORKSPACES_DIR` (default `../workspaces`) — data location
+- `DASH_PROJECTS_DIR` (default `../projects`) — data location
 - `DASH_API` (dashboard dev, default `http://localhost:8787`) — proxy target

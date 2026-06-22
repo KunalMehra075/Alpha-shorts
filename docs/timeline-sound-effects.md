@@ -7,7 +7,7 @@ _Status: DRAFT for review. No code yet. Scene reorder/insert/remove is explicitl
 Let me drop short sound effects onto a video at any point in time.
 
 - Sounds come from a **global** library (my own uploaded sounds — **no external provider**), shared
-  across **all** workspaces (not workspace-scoped).
+  across **all** projects (not project-scoped).
 - **Drag & drop** a sound from an "Add Sounds" panel onto a new **audio track below the timeline**;
   it shows there as a block at the time I dropped it.
 - Placed sounds are **mixed into the render** and **audible in the preview**.
@@ -18,20 +18,20 @@ Let me drop short sound effects onto a video at any point in time.
 
 ## 2. Two layers (data model)
 
-### A) Global sound library — app-level, not per-workspace
+### A) Global sound library — app-level, not per-project
 - Files live at **`<repoRoot>/sounds/`** with an index **`<repoRoot>/sounds/library.json`**.
 - `SoundItem = { id, name, file, durationSec, sizeBytes, createdAt }` (`file` relative to the sounds dir).
 - Served read-only at a new static route **`/sounds/<file>`** (sibling of `/media`), and listed via a
-  new **app-level** API (`/api/sounds`, *not* under `/workspaces/:id`).
+  new **app-level** API (`/api/sounds`, *not* under `/projects/:id`).
 - **Sample seeding:** on first read, if the index is empty, generate ~5 short sounds with ffmpeg
   (e.g. `pop` 0.15s, `click` 0.2s, `ding` 0.5s, `whoosh` 0.8s, `chime` 1s) into `sounds/samples/` and
   index them. Clearly placeholders; real ones get added by the user.
 
-### B) Per-video placements — in the workspace manifest
+### B) Per-video placements — in the project manifest
 - `manifest.sounds: SoundPlacement[]`.
 - `SoundPlacement = { id, name, file, atSec, durationSec, volume }`.
 - **Copy-on-place (recommended):** dropping a global sound copies its file into
-  `workspaces/<id>/sounds/<placementId>.<ext>` and records a placement. This keeps the workspace
+  `projects/<id>/sounds/<placementId>.<ext>` and records a placement. This keeps the project
   self-contained (served via `/media`, staged for render like every other asset) and means deleting a
   global library sound never breaks an existing video. The global library is just the palette.
 - **Timing is absolute video time** (`atSec` on the final timeline) — "anywhere in the video".
@@ -42,7 +42,7 @@ flowchart LR
   GL["Global library<br/>repoRoot/sounds + library.json<br/>(/api/sounds, /sounds static)"]
   AP["Add Sounds panel<br/>(search + draggable chips)"]
   BAR["Timeline audio track<br/>(drop → atSec; blocks; drag/delete)"]
-  MAN["manifest.sounds[]<br/>(copied into workspace/sounds/)"]
+  MAN["manifest.sounds[]<br/>(copied into project/sounds/)"]
   RENDER["Remotion render<br/>Sequence@from=atSec*fps + Audio"]
   PREV["CSS preview<br/>play at atSec"]
   GL --> AP -->|drag & drop| BAR --> MAN
@@ -57,15 +57,15 @@ flowchart LR
   samples via ffmpeg if empty), `addSound({buffer, name})` (write + ffprobe duration + index),
   `deleteSound(id)`.
 - `server/src/routes/sounds.ts` mounted at **`/api/sounds`** (top-level in `index.ts`, beside
-  `/api/workspaces`): `GET /` (list), `POST /` (multipart upload), `DELETE /:id`.
+  `/api/projects`): `GET /` (list), `POST /` (multipart upload), `DELETE /:id`.
 - `server/src/index.ts`: `app.use('/sounds', express.static(soundsDir))` + mount `soundsRouter`.
 
 ### Per-video placements
 - `schema.ts`: add `SoundPlacement` and `manifest.sounds: z.array(SoundPlacement).default([])`.
-- `store.ts`: `soundsDir(id)` (`workspaces/<id>/sounds`), `getSounds(id)`, `addSoundPlacement(id, rec)`,
+- `store.ts`: `soundsDir(id)` (`projects/<id>/sounds`), `getSounds(id)`, `addSoundPlacement(id, rec)`,
   `updateSoundPlacement(id, placementId, patch)` (atSec, volume), `removeSoundPlacement(id, placementId)`.
 - `lib/video.ts` (or `lib/sounds.ts`): `placeSound({ id, soundId, atSec })` → resolve the global
-  sound, copy its file into the workspace, ffprobe duration, push a placement.
+  sound, copy its file into the project, ffprobe duration, push a placement.
 - Routes under `/:id/sounds` (new nested router, or fold into the video router): `GET /`,
   `POST /` `{soundId, atSec}`, `PUT /:placementId` `{atSec?, volume?}`, `DELETE /:placementId`.
 
@@ -117,7 +117,7 @@ Matches the mockup:
   `usePlaceSound(id)`, `useUpdateSoundPlacement(id)`, `useRemoveSoundPlacement(id)`.
 
 ## 5. Decisions (my recommendations — flag any you'd change)
-- **Copy-on-place** into the workspace (self-contained) ✅ vs reference global files.
+- **Copy-on-place** into the project (self-contained) ✅ vs reference global files.
 - **Absolute video-time** anchoring ✅ vs scene-relative.
 - **Native HTML5 DnD** ✅ (no dep) vs `@dnd-kit`.
 - v1 per-placement controls: **drag-reposition + volume + delete** ✅; **trim/fades deferred**.
@@ -131,7 +131,7 @@ Matches the mockup:
 
 ## 7. Verification
 - `GET /api/sounds` lists seeded samples; files served at `/sounds/<file>`; upload + delete work.
-- Drag a sample onto the audio track → placement created (copied to `workspaces/<id>/sounds/`),
+- Drag a sample onto the audio track → placement created (copied to `projects/<id>/sounds/`),
   shows as a block; reposition + delete persist via the API.
 - Short render with one placed sound → extract the audio around `atSec` (ffmpeg band/`volumedetect`)
   and confirm energy there; confirm narration still present.

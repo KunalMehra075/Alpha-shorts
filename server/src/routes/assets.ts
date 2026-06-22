@@ -41,7 +41,7 @@ const TrimBody = z.object({ trimStartSec: z.number().min(0), trimEndSec: z.numbe
 assetsRouter.get(
   '/',
   ah((req, res) => {
-    readManifest(pid(req)); // 404 if workspace missing
+    readManifest(pid(req)); // 404 if project missing
     res.json(ensureSceneRows(pid(req)));
   })
 );
@@ -55,7 +55,7 @@ assetsRouter.post(
   })
 );
 
-// POST select a candidate (downloads/copies it into the workspace).
+// POST select a candidate (downloads/copies it into the project).
 assetsRouter.post(
   '/:scene/select',
   ah(async (req, res) => {
@@ -64,7 +64,7 @@ assetsRouter.post(
   })
 );
 
-// POST select a library image/video for a scene (copies it into the workspace).
+// POST select a library image/video for a scene (copies it into the project).
 assetsRouter.post(
   '/:scene/select-library',
   ah(async (req, res) => {

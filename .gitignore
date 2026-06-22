@@ -29,8 +29,8 @@ remotion/public/*
 !assets/library/.gitkeep
 
 # Dashboard (web + server) build + data
-workspaces/*
-!workspaces/.gitkeep
+projects/*
+!projects/.gitkeep
 dashboard/node_modules/
 dashboard/dist/
 server/node_modules/
