@@ -652,6 +652,40 @@ export function useThumbnailFromFrame(id: string) {
   });
 }
 
+export function useGenerateThumbnail(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (prompt: string) => api.generateThumbnail(id, prompt),
+    onSuccess: () => invalidateUpload(qc, id)
+  });
+}
+
+// ── AI image generation ───────────────────────────────────────────────────────
+export function useImageGenStatus() {
+  return useQuery({ queryKey: ['image-gen-status'], queryFn: api.imageGenStatus });
+}
+
+export function useGenerateLibraryImage(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (prompt: string) => api.generateLibraryImage(id, prompt),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['library', id] })
+  });
+}
+
+export function useGenerateSceneImage(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ scene, prompt }: { scene: number; prompt: string }) =>
+      api.generateSceneImage(id, scene, prompt),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.scenes(id) });
+      qc.invalidateQueries({ queryKey: qk.assets(id) });
+      qc.invalidateQueries({ queryKey: ['library', id] });
+    }
+  });
+}
+
 export function useYoutubeStatus(id: string | undefined) {
   return useQuery({
     queryKey: ['youtube', id ?? ''] as const,

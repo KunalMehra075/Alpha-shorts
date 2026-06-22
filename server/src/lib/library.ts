@@ -3,8 +3,9 @@ import { extname, join } from 'node:path';
 import { customAlphabet } from 'nanoid';
 import { ensureDir } from './fsx';
 import { workspaceDir } from './paths';
-import { addLibraryItem, HttpError, libraryDir } from './store';
+import { addLibraryItem, HttpError, libraryDir, readManifest } from './store';
 import { GLOBAL_MEDIA_DIR, getMediaLibrary } from './media';
+import { defaultImageGenerator } from './image';
 import type { LibraryItem } from './schema';
 
 const shortId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 10);
@@ -44,6 +45,22 @@ export function addToLibrary(opts: { id: string; buffer: Buffer; originalName: s
   };
   addLibraryItem(id, item);
   return item;
+}
+
+// Generate an image with the AI strategy chain (Gemini → OpenAI) and add it to
+// this workspace's library. Always 9:16 to match the Short.
+export async function generateLibraryImage(opts: { id: string; prompt: string }): Promise<LibraryItem> {
+  const { id, prompt } = opts;
+  readManifest(id); // 404 if the workspace is missing
+  if (!prompt?.trim()) throw new HttpError(400, 'A prompt is required.');
+  let result;
+  try {
+    result = await defaultImageGenerator().generate({ prompt: prompt.trim(), aspect: '9:16' });
+  } catch (err: any) {
+    throw new HttpError(502, err?.message || 'Image generation failed.');
+  }
+  const ext = /jpe?g/.test(result.mime) ? '.jpg' : '.png';
+  return addToLibrary({ id, buffer: result.buffer, originalName: `ai-${Date.now()}${ext}` });
 }
 
 // Copy a GLOBAL media-library item into this workspace's library.

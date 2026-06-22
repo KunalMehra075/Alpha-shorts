@@ -3,13 +3,14 @@ import multer from 'multer';
 import { z } from 'zod';
 import { ah } from '../lib/async';
 import { deleteLibraryItem, getLibrary, readManifest } from '../lib/store';
-import { addToLibrary, addToLibraryFromGlobal } from '../lib/library';
+import { addToLibrary, addToLibraryFromGlobal, generateLibraryImage } from '../lib/library';
 
 export const libraryRouter = Router({ mergeParams: true });
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 const pid = (req: any) => req.params.id as string;
 const FromGlobalBody = z.object({ itemId: z.string().min(1) });
+const GenerateBody = z.object({ prompt: z.string().min(1) });
 
 // GET all library items.
 libraryRouter.get(
@@ -40,6 +41,15 @@ libraryRouter.post(
   ah((req, res) => {
     const body = FromGlobalBody.parse(req.body);
     res.status(201).json(addToLibraryFromGlobal({ id: pid(req), itemId: body.itemId }));
+  })
+);
+
+// POST generate an AI image and add it to this workspace's library.
+libraryRouter.post(
+  '/generate',
+  ah(async (req, res) => {
+    const body = GenerateBody.parse(req.body);
+    res.status(201).json(await generateLibraryImage({ id: pid(req), prompt: body.prompt }));
   })
 );
 

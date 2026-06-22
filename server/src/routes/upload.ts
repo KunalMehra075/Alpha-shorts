@@ -9,6 +9,7 @@ import {
   clearThumbnail,
   setThumbnailFromAsset,
   setThumbnailFromFrame,
+  setThumbnailFromGenerated,
   setThumbnailFromUpload
 } from '../lib/thumbnail';
 
@@ -84,6 +85,17 @@ uploadRouter.post(
   ah(async (req, res) => {
     const body = FromFrame.parse(req.body ?? {});
     res.status(201).json(await setThumbnailFromFrame({ id: pid(req), atSec: body.atSec }));
+  })
+);
+
+const GenerateThumb = z.object({ prompt: z.string().min(1) });
+
+// POST generate a thumbnail with the AI image chain.
+uploadRouter.post(
+  '/thumbnail/generate',
+  ah(async (req, res) => {
+    const body = GenerateThumb.parse(req.body);
+    res.status(201).json(await setThumbnailFromGenerated({ id: pid(req), prompt: body.prompt }));
   })
 );
 

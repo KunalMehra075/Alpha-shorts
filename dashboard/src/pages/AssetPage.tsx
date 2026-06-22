@@ -40,6 +40,9 @@ import {
   useBuildBreakdown,
   useClearSceneAsset,
   useDeleteLibrary,
+  useGenerateLibraryImage,
+  useGenerateSceneImage,
+  useImageGenStatus,
   useLibrary,
   useMediaLibrary,
   useRemoveScene,
@@ -539,6 +542,18 @@ function SceneInspector({
   const durRef = useRef(onDuration);
   durRef.current = onDuration;
 
+  const genScene = useGenerateSceneImage(id);
+  const { data: imageGen } = useImageGenStatus();
+  const generateImage = async () => {
+    if (!imagePrompt.trim()) return;
+    try {
+      await genScene.mutateAsync({ scene: sceneNumber, prompt: imagePrompt.trim() });
+      toast.success('Image generated & selected');
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+
   const parsedKeywords = () => keywords.split(',').map((k) => k.trim()).filter(Boolean);
 
   // Text fields → updateScene (duration handled separately so videos can trim).
@@ -716,8 +731,31 @@ function SceneInspector({
                 setDirty(true);
               }}
               className="min-h-[80px] font-mono text-[12px] leading-relaxed"
-              placeholder="Saved for later — AI image generation is wired in a future round."
+              placeholder="e.g. ultra-realistic cinematic 9:16 portrait of…"
             />
+            {imageGen && !imageGen.available ? (
+              <p className="text-[11px] text-muted-foreground">
+                Add <code>GEMINI_API_KEY</code> or <code>OPENAI_API_KEY</code> to <code>.env</code> to
+                enable AI image generation.
+              </p>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!imagePrompt.trim() || genScene.isPending}
+                onClick={generateImage}
+              >
+                {genScene.isPending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Generating…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="size-4" /> Generate image
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         )}
 
@@ -785,6 +823,21 @@ function AssetLibrary({
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [globalOpen, setGlobalOpen] = useState(false);
+  const [genOpen, setGenOpen] = useState(false);
+  const [genPrompt, setGenPrompt] = useState('');
+  const genLib = useGenerateLibraryImage(id);
+  const { data: imageGen } = useImageGenStatus();
+  const generate = async () => {
+    if (!genPrompt.trim()) return;
+    try {
+      await genLib.mutateAsync(genPrompt.trim());
+      toast.success('Image generated & added to library');
+      setGenPrompt('');
+      setGenOpen(false);
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
   const images = items.filter((i) => i.kind === 'image');
   const videos = items.filter((i) => i.kind === 'video');
   const audios = items.filter((i) => i.kind === 'audio');
@@ -839,6 +892,9 @@ function AssetLibrary({
         <div className="mb-1 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Asset Library</h3>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setGenOpen(true)}>
+              <Sparkles className="size-4" /> Generate with AI
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setGlobalOpen(true)}>
               <Layers className="size-4" /> Add from global media
             </Button>
@@ -903,6 +959,49 @@ function AssetLibrary({
         </Tabs>
       </CardContent>
       {globalOpen && <GlobalLibraryPicker id={id} onClose={() => setGlobalOpen(false)} />}
+
+      <Dialog open={genOpen} onOpenChange={(o) => setGenOpen(o)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Generate image with AI</DialogTitle>
+            <DialogDescription>
+              Describe the image — generated in 9:16 and added to this workspace's library.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={genPrompt}
+            onChange={(e) => setGenPrompt(e.target.value)}
+            placeholder="e.g. ultra-realistic cinematic 9:16 portrait of an ancient temple at golden hour"
+            className="min-h-[110px] text-sm"
+          />
+          {imageGen && !imageGen.available && (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
+              Image generation isn’t configured. Add <code>GEMINI_API_KEY</code> (or{' '}
+              <code>OPENAI_API_KEY</code>) to <code>.env</code> and restart.
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setGenOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!genPrompt.trim() || genLib.isPending || (imageGen && !imageGen.available)}
+              onClick={generate}
+            >
+              {genLib.isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Generating…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="size-4" /> Generate
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

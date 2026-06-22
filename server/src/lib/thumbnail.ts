@@ -6,6 +6,7 @@ import { ensureDir, removePath } from './fsx';
 import { workspaceDir } from './paths';
 import { HttpError, getRenders, readManifest, setUpload } from './store';
 import { GLOBAL_MEDIA_DIR, getMediaLibrary } from './media';
+import { defaultImageGenerator } from './image';
 
 // YouTube custom-thumbnail constraints: JPG/PNG, ≤ 2 MB.
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -163,4 +164,43 @@ export async function setThumbnailFromFrame(opts: { id: string; atSec?: number }
   ]);
   if (!existsSync(out)) throw new HttpError(500, 'Frame extraction produced no image.');
   return setUpload(id, { thumbnail: { file: rel, source: 'frame', sizeBytes: statSync(out).size } });
+}
+
+// Generate a thumbnail with the AI strategy chain (Gemini → OpenAI), then
+// recompress to a ≤2 MB JPG via ffmpeg (same recipe as frame grab).
+export async function setThumbnailFromGenerated(opts: { id: string; prompt: string }) {
+  const { id, prompt } = opts;
+  readManifest(id);
+  if (!prompt?.trim()) throw new HttpError(400, 'A prompt is required.');
+
+  let result;
+  try {
+    result = await defaultImageGenerator().generate({ prompt: prompt.trim(), aspect: '9:16' });
+  } catch (err: any) {
+    throw new HttpError(502, err?.message || 'Image generation failed.');
+  }
+
+  ensureDir(workspaceDir(id));
+  clearThumbFile(id);
+  const srcExt = /jpe?g/.test(result.mime) ? '.jpg' : '.png';
+  const srcPath = join(workspaceDir(id), `thumbnail-src${srcExt}`);
+  writeFileSync(srcPath, result.buffer);
+  const rel = 'thumbnail.jpg';
+  const out = join(workspaceDir(id), rel);
+  try {
+    await runFfmpeg([
+      '-i',
+      srcPath,
+      '-vf',
+      "scale='min(1280,iw)':'min(1280,ih)':force_original_aspect_ratio=decrease",
+      '-q:v',
+      '3',
+      '-y',
+      out
+    ]);
+  } finally {
+    removePath(srcPath);
+  }
+  if (!existsSync(out)) throw new HttpError(500, 'Could not process the generated image.');
+  return setUpload(id, { thumbnail: { file: rel, source: 'ai', sizeBytes: statSync(out).size } });
 }

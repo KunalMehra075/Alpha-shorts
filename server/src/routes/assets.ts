@@ -7,6 +7,7 @@ import { ensureSceneRows, readManifest } from '../lib/store';
 import {
   autofill,
   clearScene,
+  generateSceneImage,
   saveSceneMeta,
   searchScene,
   selectScene,
@@ -33,6 +34,7 @@ const SaveBody = z.object({
 });
 const SelectBody = z.object({ ref: AssetRef });
 const SelectLibraryBody = z.object({ itemId: z.string().min(1) });
+const GenerateBody = z.object({ prompt: z.string().min(1) });
 const TrimBody = z.object({ trimStartSec: z.number().min(0), trimEndSec: z.number().min(0.5) });
 
 // GET current assets state (scene rows initialized from the script).
@@ -77,6 +79,17 @@ assetsRouter.post(
   ah(async (req, res) => {
     const body = SelectLibraryBody.parse(req.body);
     res.json(await selectSceneFromGlobal({ id: pid(req), sceneNumber: sceneNum(req), itemId: body.itemId }));
+  })
+);
+
+// POST generate an AI image into the library and select it for this scene.
+assetsRouter.post(
+  '/:scene/generate',
+  ah(async (req, res) => {
+    const body = GenerateBody.parse(req.body);
+    res.status(201).json(
+      await generateSceneImage({ id: pid(req), sceneNumber: sceneNum(req), prompt: body.prompt })
+    );
   })
 );
 

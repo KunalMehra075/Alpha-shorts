@@ -41,6 +41,8 @@ import { TabHeader } from '@/components/TabHeader';
 import { cn, libraryUrl } from '@/lib/utils';
 import {
   useGenerateSeo,
+  useGenerateThumbnail,
+  useImageGenStatus,
   useLibrary,
   useMediaLibrary,
   usePublishYoutube,
@@ -560,6 +562,7 @@ export function UploadPage() {
         <ThumbnailPicker
           id={id}
           renderUrl={renderUrl}
+          title={title}
           onClose={() => setThumbOpen(false)}
           onPicked={() => setShowThumb(true)}
         />
@@ -571,11 +574,13 @@ export function UploadPage() {
 function ThumbnailPicker({
   id,
   renderUrl,
+  title,
   onClose,
   onPicked
 }: {
   id: string;
   renderUrl: string | null;
+  title: string;
   onClose: () => void;
   onPicked: () => void;
 }) {
@@ -584,8 +589,23 @@ function ThumbnailPicker({
   const fromAsset = useThumbnailFromAsset(id);
   const uploadThumb = useUploadThumbnail(id);
   const frameThumb = useThumbnailFromFrame(id);
+  const genThumb = useGenerateThumbnail(id);
+  const { data: imageGen } = useImageGenStatus();
   const fileRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
+  const [aiPrompt, setAiPrompt] = useState(title || '');
+
+  const generate = async () => {
+    if (!aiPrompt.trim()) return;
+    try {
+      await genThumb.mutateAsync(aiPrompt.trim());
+      toast.success('Thumbnail generated');
+      onPicked();
+      onClose();
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
 
   // "Choose frame" tab: scrub the rendered video and grab the shown frame.
   const frameVideoRef = useRef<HTMLVideoElement>(null);
@@ -770,18 +790,42 @@ function ThumbnailPicker({
             </div>
           </TabsContent>
 
-          <TabsContent value="ai">
-            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 py-12 text-center">
-              <Sparkles className="size-7 text-muted-foreground" />
-              <p className="text-sm font-medium">AI thumbnail generation</p>
-              <p className="max-w-sm text-xs text-muted-foreground">
-                Coming soon — you’ll be able to generate a thumbnail from a prompt seeded by your
-                video title.
-              </p>
-              <Button variant="secondary" size="sm" disabled className="mt-1">
-                Generate (coming soon)
-              </Button>
+          <TabsContent value="ai" className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Sparkles className="size-4" /> Describe the thumbnail — generated in 9:16, added as
+              your thumbnail.
             </div>
+            <Textarea
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="e.g. dramatic close-up of an ancient temple at golden hour, bold cinematic lighting"
+              className="min-h-[100px] text-sm"
+            />
+            {imageGen && !imageGen.available ? (
+              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
+                Image generation isn’t configured. Add <code>GEMINI_API_KEY</code> (or{' '}
+                <code>OPENAI_API_KEY</code>) to <code>.env</code> and restart.
+              </p>
+            ) : (
+              <div className="flex justify-end">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={!aiPrompt.trim() || genThumb.isPending || !imageGen?.available}
+                  onClick={generate}
+                >
+                  {genThumb.isPending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" /> Generating…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="size-4" /> Generate
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="import">

@@ -17,6 +17,7 @@ import {
   updateScene
 } from './store';
 import { GLOBAL_MEDIA_DIR, getMediaLibrary } from './media';
+import { generateLibraryImage } from './library';
 import type { AssetRef } from './schema';
 
 // Probe a clip's duration (seconds), rounded to 0.1s. Best-effort → 0 on failure.
@@ -187,6 +188,15 @@ export async function selectSceneFromLibrary(opts: { id: string; sceneNumber: nu
     trimEndSec: null
   };
   return selectScene({ id, sceneNumber, ref });
+}
+
+// Generate an image (AI chain) into the workspace library AND select it for the
+// scene — one backend call. Returns the new library item + updated assets state.
+export async function generateSceneImage(opts: { id: string; sceneNumber: number; prompt: string }) {
+  const { id, sceneNumber, prompt } = opts;
+  const item = await generateLibraryImage({ id, prompt });
+  const assets = await selectSceneFromLibrary({ id, sceneNumber, itemId: item.id });
+  return { item, assets };
 }
 
 // Assign a GLOBAL media-library image/video to a scene (copies it into the

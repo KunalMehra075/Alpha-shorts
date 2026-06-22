@@ -3,6 +3,7 @@ import type {
   AnalyticsRange,
   AnalyticsStatus,
   AnalyticsSeriesPoint,
+  ImageGenStatus,
   OauthResult,
   TopVideos,
   VideoAnalyticsRow,
@@ -405,6 +406,24 @@ export const api = {
     }),
   removeThumbnail: (id: string) =>
     request<UploadMeta>(`/workspaces/${id}/upload/thumbnail`, { method: 'DELETE' }),
+  generateThumbnail: (id: string, prompt: string) =>
+    request<UploadMeta>(`/workspaces/${id}/upload/thumbnail/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ prompt })
+    }),
+
+  // AI image generation
+  imageGenStatus: () => request<ImageGenStatus>(`/ai/image-status`),
+  generateLibraryImage: (id: string, prompt: string) =>
+    request<LibraryItem>(`/workspaces/${id}/library/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ prompt })
+    }),
+  generateSceneImage: (id: string, scene: number, prompt: string) =>
+    request<{ item: LibraryItem; assets: AssetsState }>(`/workspaces/${id}/assets/${scene}/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ prompt })
+    }),
 
   // analytics
   analyticsStatus: () => request<AnalyticsStatus>(`/analytics/status`),

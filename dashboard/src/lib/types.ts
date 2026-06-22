@@ -298,6 +298,8 @@ export type AnalyticsStatus = {
 
 export type OauthResult = { refreshToken?: string; pending?: boolean };
 
+export type ImageGenStatus = { available: boolean; providers: string[] };
+
 // Data responses may instead carry a re-auth flag (HTTP 200) — handle in the UI.
 export type NeedsReauth = { needsReauth: true; message: string };
 export type WithReauth<T> = T | NeedsReauth;
