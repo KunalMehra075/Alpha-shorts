@@ -320,11 +320,22 @@ export function uploadScene(opts: {
 
 // Best-effort fill: for each scene without a selection, pick + download the top
 // ranked candidate for its keywords. One search call per unfilled scene.
-export async function autofill(opts: { id: string }) {
-  const { id } = opts;
+export async function autofill(opts: {
+  id: string;
+  onProgress?: (done: number, total: number) => void;
+}) {
+  const { id, onProgress } = opts;
   ensureSceneRows(id);
   const scenes = getScenes(id); // keywords live on the canonical breakdown
   const selectedByNum = new Map(getAssetsState(id).scenes.map((r) => [r.sceneNumber, r.selected]));
+
+  // "Targets" = unselected scenes that actually have keywords to search with.
+  const total = scenes.filter((sc, i) => {
+    const num = sc.scene ?? i + 1;
+    return !selectedByNum.get(num) && (sc.searchKeywords ?? []).length > 0;
+  }).length;
+  let done = 0;
+  onProgress?.(done, total);
 
   for (let i = 0; i < scenes.length; i++) {
     const sc = scenes[i];
@@ -332,9 +343,15 @@ export async function autofill(opts: { id: string }) {
     if (selectedByNum.get(num)) continue; // already has an asset
     const keywords = sc.searchKeywords ?? [];
     if (!keywords.length) continue;
-    const best = await searchAsset({ keywords, config: assetConfig() });
-    if (!best) continue;
-    await selectScene({ id, sceneNumber: num, ref: toRef(best) });
+    // One scene's failure must not abort the whole batch.
+    try {
+      const best = await searchAsset({ keywords, config: assetConfig() });
+      if (best) await selectScene({ id, sceneNumber: num, ref: toRef(best) });
+    } catch {
+      /* skip this scene, keep going */
+    }
+    done += 1;
+    onProgress?.(done, total);
   }
   return getAssetsState(id);
 }

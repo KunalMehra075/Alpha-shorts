@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -47,21 +47,25 @@ import {
   useMediaLibrary,
   useRemoveScene,
   useScenes,
+  useSceneJobs,
   useSearchSceneAssets,
   useSelectSceneAsset,
   useSelectSceneFromLibrary,
   useTrimSceneAsset,
   useUpdateScene,
   useUploadLibrary,
-  useUploadSceneAsset
+  useUploadSceneAsset,
+  qk
 } from '@/lib/queries';
+import { useQueryClient } from '@tanstack/react-query';
 import { useProjectCtx } from '@/layouts/ProjectLayout';
 import { placeholderDataUri } from '@/lib/placeholder';
 import { formatBytes } from '@/lib/mockMedia';
 import { libraryUrl } from '@/lib/utils';
 import type { AssetRef, LibraryItem, MediaItem, Scene, SceneAssets, ScenePatch, VisualType } from '@/lib/types';
 
-const VISUAL_TYPES: VisualType[] = ['Image', 'Video', 'Animation', 'SplitScreen'];
+// Scenes are only Image or Video (Animation/SplitScreen are no longer used).
+const VISUAL_TYPES: VisualType[] = ['Image', 'Video'];
 const EMPTY_ROW = { sceneNumber: 0, keywords: [], imagePrompt: '', candidates: [], selected: null } satisfies SceneAssets;
 
 function mediaUrl(id: string, file: string, bust: number) {
@@ -97,6 +101,80 @@ export function AssetPage() {
   const addFromMedia = useAddSceneFromMedia(id);
   const removeScene = useRemoveScene(id);
   const trimAsset = useTrimSceneAsset(id);
+  const genScene = useGenerateSceneImage(id);
+  const qc = useQueryClient();
+
+  // Background jobs (breakdown / autofill) — polled so progress persists across
+  // page navigation and the table can fill in scene-by-scene.
+  const { data: jobs } = useSceneJobs(id);
+  const breakdownRunning = jobs?.breakdown?.status === 'running';
+  const autofillRunning = jobs?.autofill?.status === 'running';
+
+  // Scenes currently generating an AI image (their asset cell shows a spinner).
+  const [generatingScenes, setGeneratingScenes] = useState<Set<number>>(new Set());
+
+  // While autofill runs, refresh scenes/assets on every poll tick so selected
+  // assets appear top-to-bottom as the backend fills them.
+  useEffect(() => {
+    if (!autofillRunning) return;
+    qc.invalidateQueries({ queryKey: qk.assets(id) });
+    qc.invalidateQueries({ queryKey: qk.scenes(id) });
+  }, [jobs?.autofill?.updatedAt, autofillRunning, id, qc]);
+
+  // On job completion (running → not), refresh data and surface a toast once.
+  const prevBreakdown = useRef(false);
+  const prevAutofill = useRef(false);
+  useEffect(() => {
+    if (prevBreakdown.current && !breakdownRunning) {
+      const j = jobs?.breakdown;
+      qc.invalidateQueries({ queryKey: qk.scenes(id) });
+      qc.invalidateQueries({ queryKey: qk.assets(id) });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+      qc.invalidateQueries({ queryKey: qk.projects });
+      if (j?.status === 'error') {
+        toast.error(`Breakdown failed: ${j.error ?? 'unknown error'}`);
+      } else if (j?.meta?.mock) {
+        toast.warning(
+          `Breakdown used the mock fallback (${j.meta.sceneCount ?? 0} scenes) — the AI provider failed or no API key is set.`
+        );
+      } else if (j) {
+        toast.success(`Breakdown built via ${j.meta?.provider ?? 'AI'} — ${j.meta?.sceneCount ?? 0} scenes`);
+        setSelected(0);
+      }
+    }
+    prevBreakdown.current = !!breakdownRunning;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [breakdownRunning]);
+
+  useEffect(() => {
+    if (prevAutofill.current && !autofillRunning) {
+      const j = jobs?.autofill;
+      qc.invalidateQueries({ queryKey: qk.assets(id) });
+      qc.invalidateQueries({ queryKey: qk.scenes(id) });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+      if (j?.status === 'error') toast.error(`Auto-fill failed: ${j.error ?? 'unknown error'}`);
+      else toast.success(`Auto-filled ${j?.done ?? 0} scene${(j?.done ?? 0) === 1 ? '' : 's'} from stock`);
+    }
+    prevAutofill.current = !!autofillRunning;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofillRunning]);
+
+  // Generate an AI image for one scene; its row shows a spinner until it lands.
+  const generateSceneImage = async (sceneNumber: number, prompt: string) => {
+    setGeneratingScenes((s) => new Set(s).add(sceneNumber));
+    try {
+      await genScene.mutateAsync({ scene: sceneNumber, prompt });
+      toast.success('Image generated & selected');
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    } finally {
+      setGeneratingScenes((s) => {
+        const next = new Set(s);
+        next.delete(sceneNumber);
+        return next;
+      });
+    }
+  };
 
   const [selected, setSelected] = useState(0);
   const [modalItem, setModalItem] = useState<LibraryItem | null>(null);
@@ -123,15 +201,29 @@ export function AssetPage() {
     });
   };
 
+  // Kicks off the background breakdown job; progress + completion are driven by
+  // the jobs poll (so this survives navigating away and back).
   const runBuild = async () => {
     try {
-      const r = await build.mutateAsync();
-      toast.success(`Breakdown built from your ${r.source} — ${r.scenes.length} scenes`);
-      setSelected(0);
+      await build.mutateAsync();
     } catch (e: any) {
       toast.error(String(e.message ?? e));
     }
   };
+
+  const runAutofill = async () => {
+    try {
+      await autofill.mutateAsync();
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+
+  // Breakdown job in progress (and no scenes yet) → show a progress card. This
+  // survives switching pages because the job state lives on the server.
+  if (!scenes.length && breakdownRunning) {
+    return <BreakdownProgress status={project.stages.assets.status} startedAt={jobs!.breakdown!.startedAt} />;
+  }
 
   // No scenes yet and the user hasn't chosen manual → offer both entry points.
   if (!scenes.length && !manualMode) {
@@ -160,9 +252,9 @@ export function AssetPage() {
                 variant="primary"
                 className="mt-auto"
                 onClick={runBuild}
-                disabled={build.isPending || scenesLoading || !canAi}
+                disabled={build.isPending || breakdownRunning || scenesLoading || !canAi}
               >
-                {build.isPending ? (
+                {build.isPending || breakdownRunning ? (
                   <>
                     <Loader2 className="size-4 animate-spin" /> Building…
                   </>
@@ -249,8 +341,17 @@ export function AssetPage() {
         actions={
           <div className="flex gap-2">
             {hasScript && (
-              <Button variant="outline" size="sm" disabled={build.isPending} onClick={runBuild}>
-                {build.isPending ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={build.isPending || breakdownRunning}
+                onClick={runBuild}
+              >
+                {build.isPending || breakdownRunning ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Wand2 className="size-4" />
+                )}
                 Rebuild breakdown
               </Button>
             )}
@@ -258,18 +359,15 @@ export function AssetPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={autofill.isPending}
-                onClick={async () => {
-                  try {
-                    await autofill.mutateAsync();
-                    toast.success('Auto-filled scenes from top stock results');
-                  } catch (e: any) {
-                    toast.error(String(e.message ?? e));
-                  }
-                }}
+                disabled={autofill.isPending || autofillRunning}
+                onClick={runAutofill}
               >
-                {autofill.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                Auto-fill all
+                {autofill.isPending || autofillRunning ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Sparkles className="size-4" />
+                )}
+                {autofillRunning ? `Auto-filling… ${jobs?.autofill?.done ?? 0}/${jobs?.autofill?.total ?? 0}` : 'Auto-fill all'}
               </Button>
             )}
             <Button variant="primary" size="sm" onClick={() => setAddOpen(true)}>
@@ -339,24 +437,39 @@ export function AssetPage() {
                           </td>
                         )}
                         <td className="p-3 align-top">
-                          {r.selected ? (
-                            r.selected.file && r.selected.kind === 'video' ? (
-                              <video
-                                src={`/media/${id}/${r.selected.file}?v=${r.selected.sizeBytes}`}
-                                muted
-                                preload="metadata"
-                                className="h-12 w-12 rounded object-cover ring-1 ring-border"
-                              />
-                            ) : thumb ? (
-                              <img src={thumb} alt="" className="h-12 w-12 rounded object-cover ring-1 ring-border" />
-                            ) : (
-                              <span className="inline-flex h-12 w-8 items-center justify-center rounded bg-muted ring-1 ring-border">
-                                <Film className="size-4 text-muted-foreground" />
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-xs text-muted-foreground">none</span>
-                          )}
+                          {(() => {
+                            // A scene shows a loading box when it's generating an
+                            // AI image (even if an asset is already attached — it's
+                            // being replaced), or while auto-fill is still working
+                            // toward an empty scene that has keywords.
+                            const generating = generatingScenes.has(sceneNo);
+                            const autofilling =
+                              autofillRunning && !r.selected && (s.searchKeywords ?? []).length > 0;
+                            if (generating || autofilling) {
+                              return (
+                                <span className="inline-flex h-12 w-12 items-center justify-center rounded bg-muted ring-1 ring-border">
+                                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                                </span>
+                              );
+                            }
+                            if (r.selected) {
+                              return r.selected.file && r.selected.kind === 'video' ? (
+                                <video
+                                  src={`/media/${id}/${r.selected.file}?v=${r.selected.sizeBytes}`}
+                                  muted
+                                  preload="metadata"
+                                  className="h-12 w-12 rounded object-cover ring-1 ring-border"
+                                />
+                              ) : thumb ? (
+                                <img src={thumb} alt="" className="h-12 w-12 rounded object-cover ring-1 ring-border" />
+                              ) : (
+                                <span className="inline-flex h-12 w-8 items-center justify-center rounded bg-muted ring-1 ring-border">
+                                  <Film className="size-4 text-muted-foreground" />
+                                </span>
+                              );
+                            }
+                            return <span className="text-xs text-muted-foreground">none</span>;
+                          })()}
                         </td>
                         <td className="p-3 align-top">
                           <button
@@ -415,6 +528,8 @@ export function AssetPage() {
               hasScript={hasScript}
               searching={search.isPending && search.variables?.sceneNumber === selNumber}
               selecting={select.isPending}
+              generating={generatingScenes.has(selNumber)}
+              onGenerate={(prompt) => generateSceneImage(selNumber, prompt)}
               onUpdate={(patch) => updateScene.mutate({ sceneNumber: selNumber, patch })}
               onDuration={(dur) => {
                 const sel = selRow.selected;
@@ -497,6 +612,65 @@ export function AssetPage() {
   );
 }
 
+// Full-page progress while the AI breakdown job runs. The bar is a "guess" (the
+// LLM gives no progress signal) that eases toward 95%; the page swaps to the
+// scene table once the job completes. Persists across navigation because the job
+// lives on the server.
+function BreakdownProgress({
+  status,
+  startedAt
+}: {
+  status: ComponentProps<typeof TabHeader>['status'];
+  startedAt: string;
+}) {
+  const [pct, setPct] = useState(6);
+  useEffect(() => {
+    const start = Date.parse(startedAt) || Date.now();
+    const tick = () => {
+      const elapsed = (Date.now() - start) / 1000;
+      setPct(Math.min(95, Math.max(6, 95 * (1 - Math.exp(-elapsed / 11)))));
+    };
+    tick();
+    const h = setInterval(tick, 250);
+    return () => clearInterval(h);
+  }, [startedAt]);
+
+  return (
+    <div className="animate-fade-in">
+      <TabHeader
+        icon={Images}
+        title="Assets"
+        description="Generating the scene-by-scene breakdown…"
+        status={status}
+      />
+      <Card>
+        <CardContent className="flex flex-col items-center gap-4 p-12 text-center">
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">
+            <Wand2 className="size-7 animate-pulse text-accent" />
+          </div>
+          <div>
+            <p className="text-base font-semibold">Generating scenes with AI…</p>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              Splitting your script into scenes with English keywords and detailed image prompts. This
+              usually takes 20–30 seconds.
+            </p>
+          </div>
+          <div className="w-full max-w-sm">
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="mt-2 text-xs tabular-nums text-muted-foreground">{Math.round(pct)}%</p>
+          </div>
+          <p className="text-[11px] text-muted-foreground">You can switch tabs — this keeps running.</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function SceneInspector({
   id,
   index,
@@ -506,6 +680,8 @@ function SceneInspector({
   hasScript,
   searching,
   selecting,
+  generating,
+  onGenerate,
   onUpdate,
   onDuration,
   onSearch,
@@ -521,6 +697,8 @@ function SceneInspector({
   hasScript: boolean;
   searching: boolean;
   selecting: boolean;
+  generating: boolean;
+  onGenerate: (prompt: string) => void;
   onUpdate: (patch: ScenePatch) => void;
   onDuration: (durationSec: number) => void;
   onSearch: (keywords: string[]) => void;
@@ -542,16 +720,10 @@ function SceneInspector({
   const durRef = useRef(onDuration);
   durRef.current = onDuration;
 
-  const genScene = useGenerateSceneImage(id);
   const { data: imageGen } = useImageGenStatus();
-  const generateImage = async () => {
-    if (!imagePrompt.trim()) return;
-    try {
-      await genScene.mutateAsync({ scene: sceneNumber, prompt: imagePrompt.trim() });
-      toast.success('Image generated & selected');
-    } catch (e: any) {
-      toast.error(String(e.message ?? e));
-    }
+  const generateImage = () => {
+    if (!imagePrompt.trim() || generating) return;
+    onGenerate(imagePrompt.trim());
   };
 
   const parsedKeywords = () => keywords.split(',').map((k) => k.trim()).filter(Boolean);
@@ -742,10 +914,10 @@ function SceneInspector({
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={!imagePrompt.trim() || genScene.isPending}
+                disabled={!imagePrompt.trim() || generating}
                 onClick={generateImage}
               >
-                {genScene.isPending ? (
+                {generating ? (
                   <>
                     <Loader2 className="size-4 animate-spin" /> Generating…
                   </>

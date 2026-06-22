@@ -13,6 +13,7 @@ import {
 import { getLibrary } from './store';
 import { getMediaLibrary } from './media';
 import { selectSceneFromGlobal, selectSceneFromLibrary, setSceneTrim } from './assets';
+import { retimeScenesToAudio } from './caption';
 
 const generator = defaultScriptGenerator();
 
@@ -81,13 +82,20 @@ export async function buildBreakdown(id: string) {
     );
   }
 
+  // Target a fast ~3-4s-per-scene visual cadence (the docs' retention rule).
+  // At typical narration speed that's roughly one scene per ~8 words; cap at 24
+  // so a full 70-80s mystery short still cuts frequently enough.
   const words = text.split(/\s+/).filter(Boolean).length;
-  const sceneCount = Math.min(20, Math.max(3, Math.round(words / 12)));
+  const sceneCount = Math.min(24, Math.max(3, Math.round(words / 8)));
 
   const result = await generator.runBreakdown({ script: text, language: m.language, sceneCount });
 
   setScenes(id, result.scenes);
   ensureSceneRows(id); // align asset rows to the new scene set
+
+  // If narration audio + captions already exist, snap the fresh scenes to the
+  // real audio timings so the breakdown total matches the narration length.
+  await retimeScenesToAudio(id);
 
   return {
     scenes: getScenes(id),

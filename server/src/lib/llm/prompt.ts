@@ -28,19 +28,24 @@ export const DirectorOutput = z.object({
 
 // Fallback creative brief when no template/prompt is supplied.
 const DEFAULT_BRIEF =
-  'A high-retention, factually accurate short on the topic. Open with a strong ' +
-  '3-second hook, keep the curiosity gap alive throughout, and end on the most ' +
-  'interesting fact plus a discussion-worthy question.';
+  'A high-retention, 100% factual short built around ONE central mystery or question. ' +
+  'Open with a 3-second curiosity-gap hook, build evidence, escalate, hit a "wait... what?" twist, ' +
+  'then resolve with the most interesting fact in the final 5 seconds and end on a ' +
+  'discussion-worthy question.';
 
 /**
  * WRITER PROMPT — produces ONLY the narration (voiceover) text. The visual
  * breakdown is a separate "director" pass (see below), so the Script step stays
  * independent of the Assets/timeline step.
+ *
+ * The system prompt embeds the channel's mystery-driven retention philosophy
+ * (see docs/prompts) while keeping our strict JSON contract — the creative
+ * BRIEF/template still owns language, length, and tone specifics.
  */
 export function buildWriterMessages(input: ScriptInput) {
   const lang = LANG_LABEL[input.language] || 'English';
 
-  const system = `You are an elite short-form video scriptwriter for a faceless facts channel. From a CREATIVE BRIEF and a TOPIC you write a single spoken VOICEOVER SCRIPT.
+  const system = `You are an elite short-form video scriptwriter for a faceless facts/mystery channel (science, history, geography, space, technology, psychology, archaeology, nature, and factually-backed mysteries). From a CREATIVE BRIEF and a TOPIC you write a single spoken VOICEOVER SCRIPT engineered for maximum retention, watch time, rewatchability, shares, and comments — while staying 100% factually accurate.
 
 You ALWAYS respond with a SINGLE valid JSON object and NOTHING else — no markdown, no code fences, no commentary.
 
@@ -49,11 +54,34 @@ OUTPUT JSON — use exactly this shape:
   "voiceoverScript": "the complete narration as one flowing string"
 }
 
-RULES:
-- Write the complete narration as natural spoken sentences with natural pauses (commas, ellipses ...).
-- If the brief does not specify a length, target roughly ${Math.max(24, input.sceneCount * 3)}-45 seconds (~90-130 words).
-- Strong 3-second hook, keep the curiosity gap alive, end on the most interesting fact + a discussion-worthy question.
-- Stay 100% factually accurate. No on-screen directions, no scene labels — narration words only.
+CORE PHILOSOPHY — mystery-driven, NOT a list of facts:
+- Build the whole script around ONE central mystery, question, investigation, claim, prediction, or discovery, and constantly move toward resolving it.
+- The viewer must feel that leaving early means missing the answer. Every sentence must increase curiosity, add evidence, escalate the mystery, or deliver a reveal — no filler.
+
+STRUCTURE (follow this arc):
+1. Hook / Mystery — the first 3 seconds open a powerful curiosity gap (a shocking question, claim, or impossible-sounding fact).
+2. Evidence / Setup — introduce the first facts; make the mystery feel real and credible.
+3. Escalation — stronger evidence; raise the stakes.
+4. Twist — a contradiction or surprising discovery; create at least one "wait... what?" moment around the middle.
+5. Resolution / Verdict — resolve the mystery and deliver the single most interesting fact of the whole script in the final ~5 seconds.
+6. Discussion question — end on a question that sparks comments and debate.
+
+RETENTION RULES:
+- Every ~10-15 seconds, introduce a new surprising piece of information (a number, discovery, contradiction, or consequence) to reset attention.
+- Use OPEN LOOPS that tease what's coming (e.g. "but the real mystery is still ahead...", "and this is where it gets strange...").
+- Include at least one ABSURDITY-FACTOR fact: unbelievable but true (extreme scale, age, distance, rarity, or consequence) that makes the viewer think "how is this even possible?".
+- Include at least one highly SHAREABLE fact people would want to tell a friend.
+
+RELATABILITY: wherever possible, connect the topic to human survival, daily life, the future, Earth, money, technology, ancient civilizations, or human curiosity, so the viewer instantly understands why it matters.
+
+FACTUAL GUARD: stay strictly accurate. Do NOT invent statistics, dates, or names. If a precise number can't be stated confidently, describe the scale qualitatively instead of fabricating it. No pseudoscience, conspiracy theories, or clickbait the script cannot pay off — the resolution must genuinely deliver on the hook.
+
+NARRATION CRAFT:
+- Short, spoken sentences with natural pauses (commas, ellipses ...). Fast, dense, high-energy. Optimized to be read aloud by an ElevenLabs AI voice.
+- Every sentence should naturally create a strong visual.
+- Narration WORDS ONLY — no on-screen directions, no scene labels, no headings.
+
+LENGTH: if the CREATIVE BRIEF specifies a length, follow it; otherwise target about 70-80 seconds (~110-130 words).
 
 LANGUAGE: if the CREATIVE BRIEF specifies a language, write in that language; otherwise write in ${lang}. Always use that language's native script — for Hindi, write in Devanagari (e.g. "क्या आपको पता है") and never transliterate into Latin/English letters. Common English loanwords may stay in English.
 
@@ -83,20 +111,24 @@ OUTPUT JSON — use exactly this shape:
 {
   "scenes": [
     {
-      "spokenLine": "the exact words narrated during this scene",
+      "spokenLine": "the exact words narrated during this scene (original language, verbatim)",
       "durationSec": 3,
-      "visualType": "Video" | "Image" | "Animation" | "SplitScreen",
-      "searchKeywords": ["3-5 short, highly searchable visual terms"],
-      "visualDescription": "one concise line describing what appears on screen",
-      "imagePrompt": "a detailed AI image-generation prompt; ultra-realistic, cinematic, 9:16 vertical"
+      "visualType": "Image" | "Video",
+      "searchKeywords": ["2-5 short ENGLISH stock-search terms"],
+      "visualDescription": "one concise English line describing what appears on screen",
+      "imagePrompt": "a detailed, scene-specific AI image prompt in ENGLISH (see rules)"
     }
   ]
 }
 
 CRITICAL RULES:
-- Use the PROVIDED script VERBATIM. Split it into consecutive scenes; concatenating all "spokenLine" values in order MUST reproduce the original script exactly. Do NOT rewrite, translate, paraphrase, add, or drop any words. Keep the original language and script (e.g. Devanagari stays Devanagari).
+- Use the PROVIDED script VERBATIM for "spokenLine". Split it into consecutive scenes; concatenating all "spokenLine" values in order MUST reproduce the original script exactly. Do NOT rewrite, translate, paraphrase, add, or drop any words. Keep the original language and script (e.g. Devanagari stays Devanagari). Only "spokenLine" keeps the original language — everything else is ENGLISH.
 - Break it into scenes of ~3-4 seconds each (durationSec between 2 and 4); aim for about ${input.sceneCount} scenes total. Every word belongs to exactly one scene, in order.
-- Visuals change every scene and directly support that line. Vary "visualType"; prefer easy-to-source visuals. "searchKeywords" must be concrete, visual, and accurate.
+- "visualType" MUST be either "Image" or "Video" only — never Animation or SplitScreen. Use "Video" for motion, action, process, or atmosphere lines; use "Image" for a single strong subject, place, object, map, or portrait.
+- "searchKeywords" MUST ALWAYS be in ENGLISH, even when the narration is Hindi or another language — they are used to search stock libraries (Pexels/Pixabay) which are English-indexed. Translate the MEANING of the line into 2-5 concrete, visual English terms (e.g. "underwater ancient ruins", "submerged city", "sonar scan", "Dwarka temple"). No abstract or non-visual words; no transliteration.
+- "visualDescription": one short ENGLISH line describing the exact shot on screen.
+- "imagePrompt": a DETAILED, scene-specific image-generation prompt in ENGLISH that depicts exactly what THIS line is about. Name the subject, setting, key details, camera angle/composition, lighting, mood, and art style, then end with ", 9:16 vertical, ultra-realistic, cinematic". It must be specific to this scene — never a generic template.
+- Prefer specific, retention-friendly visuals that match the line: maps, satellite imagery, historical reconstructions, real footage, news footage, archaeological finds, space visuals, dramatic close-ups. Avoid generic stock.
 
 Respond with ONLY the JSON object.`;
 
@@ -187,11 +219,11 @@ export function parseBreakdown(text: string): { scenes: Scene[] } {
   return { scenes };
 }
 
+// AI scenes are restricted to Image or Video — Animation/SplitScreen are clamped
+// to Image so the breakdown never produces a type we no longer use.
 function normalizeVisualType(v?: string): z.infer<typeof VisualType> {
   const s = String(v || '').toLowerCase();
   if (s.startsWith('vid')) return 'Video';
-  if (s.startsWith('split')) return 'SplitScreen';
-  if (s.startsWith('anim')) return 'Animation';
   return 'Image';
 }
 

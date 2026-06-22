@@ -11,7 +11,10 @@ const pid = (req: any) => req.params.id as string;
 
 const GenerateBody = z.object({
   language: z.string().optional(),
-  settings: CaptionSettings.optional()
+  settings: CaptionSettings.optional(),
+  // force = re-run Whisper from scratch (discard the cached transcript). Set when
+  // the user clicks "Re-transcribe" — e.g. after switching the caption language.
+  force: z.boolean().optional()
 });
 
 const SaveBody = z.object({
@@ -38,7 +41,11 @@ captionRouter.post(
     const body = GenerateBody.parse(req.body);
     const settings = CaptionSettings.parse(body.settings ?? m.captions.settings ?? {});
     const language = body.language || m.captions.language || m.language;
-    const state = await generateCaptions({ id, language, settings });
+    // Also force when the requested language differs from the cached transcript's
+    // language — the Whisper cache is keyed by audio file, not language, so a
+    // language switch would otherwise silently reuse the old transcript.
+    const force = body.force === true || (m.captions.hasTranscript && language !== m.captions.language);
+    const state = await generateCaptions({ id, language, settings, force });
     res.status(201).json(state);
   })
 );

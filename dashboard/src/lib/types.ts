@@ -386,6 +386,19 @@ export type ScenePatch = {
 
 export type BreakdownResult = { scenes: Scene[]; provider: string; mock: boolean; source: 'script' | 'transcript' };
 
+// Background Assets jobs (breakdown / autofill) — polled so progress survives navigation.
+export type SceneJob = {
+  type: 'breakdown' | 'autofill';
+  status: 'running' | 'done' | 'error';
+  total: number;
+  done: number;
+  error?: string;
+  startedAt: string;
+  updatedAt: string;
+  meta?: { mock?: boolean; provider?: string; source?: 'script' | 'transcript'; sceneCount?: number };
+};
+export type SceneJobs = { breakdown: SceneJob | null; autofill: SceneJob | null };
+
 export type ScriptVersion = {
   version: number;
   createdAt: string;

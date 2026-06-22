@@ -12,7 +12,8 @@ import type {
   AssetRef,
   AssetsState,
   AudioState,
-  BreakdownResult,
+  SceneJob,
+  SceneJobs,
   LibraryItem,
   MediaItem,
   MediaKind,
@@ -150,7 +151,7 @@ export const api = {
   getCaptions: (id: string) => request<CaptionsState>(`/projects/${id}/caption`),
   generateCaptions: (
     id: string,
-    body: { language?: string; settings?: CaptionSettings }
+    body: { language?: string; settings?: CaptionSettings; force?: boolean }
   ) =>
     request<CaptionsState>(`/projects/${id}/caption/generate`, {
       method: 'POST',
@@ -318,8 +319,10 @@ export const api = {
 
   // scenes (canonical breakdown)
   getScenes: (id: string) => request<Scene[]>(`/projects/${id}/scenes`),
-  buildBreakdown: (id: string) =>
-    request<BreakdownResult>(`/projects/${id}/scenes/breakdown`, { method: 'POST' }),
+  // Starts the breakdown as a background job (poll getSceneJobs for completion).
+  startBreakdown: (id: string) =>
+    request<SceneJob>(`/projects/${id}/scenes/breakdown`, { method: 'POST' }),
+  getSceneJobs: (id: string) => request<SceneJobs>(`/projects/${id}/scenes/jobs`),
   updateScene: (id: string, sceneNumber: number, patch: ScenePatch) =>
     request<Scene[]>(`/projects/${id}/scenes/${sceneNumber}`, {
       method: 'PUT',
@@ -372,8 +375,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(body)
     }),
-  autofillAssets: (id: string) =>
-    request<AssetsState>(`/projects/${id}/assets/autofill`, { method: 'POST' }),
+  // Starts auto-fill as a background job (poll getSceneJobs; watch getAssets fill in).
+  startAutofill: (id: string) =>
+    request<SceneJob>(`/projects/${id}/assets/autofill`, { method: 'POST' }),
   uploadSceneAsset: async (id: string, sceneNumber: number, file: File) => {
     const fd = new FormData();
     fd.append('file', file);

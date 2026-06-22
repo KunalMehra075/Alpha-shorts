@@ -7,7 +7,7 @@ import { buildAss } from '../../../src/lib/ass-generator.js';
 import { getDuration } from '../../../src/lib/ffmpeg.js';
 import { ensureDir } from './fsx';
 import { projectDir } from './paths';
-import { HttpError, captionsDir, getAudioState, getCaptions, setCaptions } from './store';
+import { HttpError, captionsDir, getAudioState, getCaptions, getScenes, setCaptions, setScenes } from './store';
 import type { CaptionLine, CaptionSettings } from './schema';
 
 type Word = { word: string; start: number; end: number };
@@ -220,10 +220,17 @@ export async function generateCaptions(opts: {
       hasTranscript: true,
       wordsCount: words.length,
       lines,
+      // A forced re-transcribe (e.g. language change) invalidates any previously
+      // rendered overlay — drop it so the stale-language preview isn't shown.
+      ...(force ? { overlay: null } : {}),
       files: { json: 'captions/caption.json', srt: 'captions/captions.srt', words: 'captions/words.json' }
     },
     'completed'
   );
+
+  // Now that fresh word timestamps exist, re-sync any existing scene breakdown to
+  // the narration (no-op if no scenes have been built yet).
+  await retimeScenesToAudio(id);
 
   return getCaptionsState(id);
 }
@@ -325,4 +332,93 @@ export async function renderCaptionOverlay(opts: { id: string }) {
 
 function getCaptionsState(id: string) {
   return getCaptions(id);
+}
+
+// ── Sync scene timings to the narration ───────────────────────────────────────
+
+function readWords(id: string): Word[] {
+  const p = join(captionsDir(id), 'words.json');
+  if (!existsSync(p)) return [];
+  try {
+    const arr = JSON.parse(readFileSync(p, 'utf8'));
+    return Array.isArray(arr)
+      ? arr.filter((w) => typeof w?.start === 'number' && typeof w?.end === 'number')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+const tokenCount = (s: string) => (s || '').trim().split(/\s+/).filter(Boolean).length;
+
+/**
+ * Re-time the NARRATION scenes (those with a spokenLine) to the real audio so the
+ * breakdown total matches the narration length, with cuts on actual word
+ * boundaries. The mapping is proportional to each scene's word count over the
+ * Whisper word timestamps (robust to ASR/tokenization mismatch); the very last
+ * narration scene is pinned to the audio's true end.
+ *
+ * Scenes WITHOUT a spokenLine — manually added extras (which may carry their own
+ * audio) — are left untouched and simply add their own length on top, so a
+ * narration of 0:57 plus an extra clip yields a longer video by design. Uses raw
+ * word timestamps (words.json), NOT caption lines, so the caption granularity
+ * (words-per-line) has no effect on scene count or timing. No-op when there's no
+ * audio yet (e.g. breakdown built from the script before narration exists).
+ */
+export async function retimeScenesToAudio(id: string): Promise<boolean> {
+  const scenes = getScenes(id);
+  if (!scenes.length) return false;
+  const narration = scenes.filter((s) => (s.spokenLine ?? '').trim().length > 0);
+  if (!narration.length) return false;
+
+  // Need the audio; bail (keep existing estimates) if narration isn't generated.
+  let audioPath: string;
+  try {
+    audioPath = currentAudioPath(id);
+  } catch {
+    return false;
+  }
+
+  const words = readWords(id);
+  let audioDur = words.length ? words[words.length - 1].end : 0;
+  try {
+    const d = await getDuration(audioPath, { video: { ffprobeBin: process.env.FFPROBE_BIN || 'ffprobe' } });
+    if (d > 0) audioDur = d;
+  } catch {
+    /* fall back to the last word's end */
+  }
+  if (!(audioDur > 0)) return false;
+
+  const totalTokens = narration.reduce((sum, s) => sum + Math.max(1, tokenCount(s.spokenLine)), 0);
+  const L = words.length;
+
+  let prevCut = 0;
+  let consumed = 0;
+  let wordPtr = 0;
+  narration.forEach((s, k) => {
+    consumed += Math.max(1, tokenCount(s.spokenLine));
+    let end: number;
+    if (k === narration.length - 1) {
+      end = audioDur; // pin the final scene to the true audio end
+    } else if (L > 0) {
+      // Cut on the nearest real word boundary for this scene's token share.
+      let idx = Math.round((consumed / totalTokens) * L) - 1;
+      if (idx < wordPtr) idx = wordPtr;
+      if (idx > L - 1) idx = L - 1;
+      end = words[idx].end;
+      wordPtr = idx + 1;
+    } else {
+      // Audio but no word timestamps → distribute proportionally by tokens.
+      end = audioDur * (consumed / totalTokens);
+    }
+    const dur = Math.max(0.5, Math.round((end - prevCut) * 100) / 100);
+    // Encode the duration; setScenes reflows contiguous start/end across all
+    // scenes (extras included), so interspersed extras keep their own length.
+    s.start = 0;
+    s.end = dur;
+    prevCut += dur;
+  });
+
+  setScenes(id, scenes);
+  return true;
 }

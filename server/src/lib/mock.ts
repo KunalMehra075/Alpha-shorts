@@ -5,7 +5,8 @@ import type { Scene, VisualType } from './schema';
 // before a real LLM is wired in (Phase 6). Output schema is a superset of the
 // renderer's scene-scripts/*.json format.
 
-const VISUAL_CYCLE: VisualType[] = ['Video', 'Animation', 'SplitScreen', 'Image'];
+// AI scenes are only ever Image or Video (no Animation/SplitScreen).
+const VISUAL_CYCLE: VisualType[] = ['Video', 'Image'];
 
 const HOOKS = [
   'Here is something almost nobody knows about',
@@ -49,20 +50,23 @@ export function generateMockNarration(topic: string, sceneCount = 5): string {
   return lines.join(' ');
 }
 
-// Pull a couple of word-stems from a line for mock keywords.
+// Mock keywords MUST be English (used to search Pexels/Pixabay). The mock can't
+// understand the narration's meaning, so it pulls only Latin-script words from
+// the line (e.g. loanwords) and pads with English visual terms — never the
+// original-language (e.g. Devanagari) words.
 function keywordsFromText(line: string, i: number): string[] {
   const base = line
     .toLowerCase()
-    .split(/[^a-z0-9ऀ-ॿ]+/)
+    .split(/[^a-z0-9]+/) // ASCII only → drops Hindi/Devanagari tokens
     .filter((w) => w.length > 3);
   const extras = [
-    ['cinematic', 'aerial', 'closeup'],
+    ['cinematic', 'aerial', 'wide shot'],
     ['ancient', 'mystery', 'ruins'],
-    ['science', 'animation', 'macro'],
-    ['dramatic', 'lighting', 'slow motion'],
-    ['nature', 'cosmos', 'abstract']
+    ['documentary', 'macro', 'detail'],
+    ['dramatic lighting', 'slow motion', 'closeup'],
+    ['nature', 'landscape', 'timelapse']
   ][i % 5];
-  return [...base.slice(0, 2), extras[i % extras.length]].filter(Boolean);
+  return [...base.slice(0, 1), ...extras].slice(0, 4).filter(Boolean);
 }
 
 // Mock SEO: deterministic titles/descriptions/tags from the topic.
@@ -104,7 +108,7 @@ export function generateMockBreakdown(script: string, _sceneCount = 5): Scene[] 
       visualType,
       searchKeywords: kws,
       visualDescription: `${kws.join(', ')} — ${visualType.toLowerCase()} shot`,
-      imagePrompt: `Ultra realistic, highly detailed ${kws.join(' ')}, cinematic lighting, dramatic composition, 9:16 vertical`
+      imagePrompt: `A cinematic, ultra-realistic vertical shot of ${kws.join(', ')}; dramatic lighting, shallow depth of field, rich detail, 9:16 vertical`
     };
   });
 }

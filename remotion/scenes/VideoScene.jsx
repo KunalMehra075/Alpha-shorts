@@ -7,6 +7,7 @@ import {
   useCurrentFrame
 } from 'remotion';
 import { AnimationScene } from './AnimationScene.jsx';
+import { sceneTransform } from '../lib/sceneMotion.js';
 
 /**
  * A stock video clip, auto-cropped to fill 9:16 (objectFit: cover) with a mild
@@ -32,30 +33,8 @@ export const VideoScene = ({
     extrapolateRight: 'clamp'
   });
 
-  // Scene-settings motion (50% = the previous defaults, so existing renders are
-  // unchanged): zoom scales the zoom amount, intensity scales the drift.
-  const motionMul = motion === 'subtle' ? 0.6 : motion === 'energetic' ? 1.6 : 1.0;
-  const zMul = (zoom / 50) * motionMul;
-  const iMul = (intensity / 50) * motionMul;
-  const zoomDelta = 0.1 * zMul;
-
-  let scale = 1.05;
-  let x = 0;
-  switch (effect) {
-    case 'zoom-out':
-      scale = interpolate(p, [0, 1], [1.02 + zoomDelta, 1.02]);
-      break;
-    case 'drift': {
-      const dx = 2 * iMul;
-      scale = 1.06 + (Math.abs(dx) * 2) / 100; // over-scan to cover the drift
-      x = interpolate(p, [0, 1], [-dx, dx]);
-      break;
-    }
-    case 'zoom-in':
-    default:
-      scale = interpolate(p, [0, 1], [1.02, 1.02 + zoomDelta]);
-      break;
-  }
+  // Canonical scale/pan, shared with the dashboard preview (see lib/sceneMotion).
+  const { scale, x } = sceneTransform(effect, p, { zoom, intensity, motion });
 
   // Optional trim window (frame offsets into the source). When present we play
   // exactly that slice; otherwise loop a short clip to fill the scene.

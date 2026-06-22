@@ -768,53 +768,81 @@ export function setUploadYoutube(
 // ── Prompt templates (global) ────────────────────────────────────────────────
 
 // Creative briefs that extend the master prompt (see lib/llm/prompt.ts). They
-// govern tone/language/length only — the master prompt owns the JSON output
-// structure (voiceover script + visual timeline).
-const FACTS_RETENTION =
+// govern tone/language/length and reinforce the mystery-driven structure — the
+// master prompt owns the JSON output (voiceover script + visual timeline).
+
+const FACTS_GOAL =
   'GOAL: Maximize retention, watch time, rewatchability, shares, and comments while staying 100% factually accurate.\n\n' +
-  'CONTENT: Base it on a real modern scientific discovery, research finding, historical event, geography fact, technological advancement, natural phenomenon, psychology insight, expert-based future prediction, or a factually-backed mystery. No pseudoscience, conspiracy theories, or exaggerated/unsupported claims.\n\n' +
-  'RETENTION & STORYTELLING:\n' +
-  '- Curiosity-driven storytelling.\n' +
-  '- The first 3 seconds must be an extremely strong hook that instantly opens a curiosity gap.\n' +
-  '- Keep the viewer constantly feeling that an even more surprising fact is coming next.\n' +
-  '- Introduce at least one major surprise or twist around the middle.\n' +
-  "- Use open loops throughout; create at least one 'wait... what?' moment.\n" +
-  '- The final 5 seconds must contain the most interesting information in the whole video.\n' +
-  '- Include one fact people would naturally want to share with friends or family.\n' +
-  '- End with a discussion-worthy question that encourages comments and opinions.';
+  'CONTENT: Base it on a real scientific discovery, research finding, historical event, geography or archaeology fact, space, technology, psychology insight, natural phenomenon, expert-based future prediction, or a factually-backed mystery. No pseudoscience, conspiracy theories, fake statistics, or unsupported claims.\n\n' +
+  'STORYTELLING: Build the whole video around ONE central mystery, question, or investigation — never a plain list of facts. Every fact must help answer that central question, and the narration must constantly move toward resolving it. The viewer should feel that leaving early means missing the answer.';
+
+const FACTS_STRUCTURE =
+  'STRUCTURE (≈70-80 seconds):\n' +
+  '- HOOK / MYSTERY (0-8s): open with a shocking question, claim, or impossible-sounding fact that creates an instant curiosity gap.\n' +
+  '- EVIDENCE / SETUP (8-25s): introduce the first facts; build credibility; make the mystery feel real.\n' +
+  '- ESCALATION (25-45s): stronger evidence; raise the surprise; make the viewer believe it might be true.\n' +
+  '- TWIST (45-60s): conflicting evidence or a surprising discovery — a clear "wait... what?" moment.\n' +
+  '- RESOLUTION / VERDICT (60-75s): resolve the mystery and deliver the single strongest fact of the whole script.\n' +
+  '- DISCUSSION QUESTION (final line): ask something that naturally drives comments and debate.';
+
+const FACTS_RULES =
+  'RULES: introduce a new surprising beat every ~10-15 seconds; use at least one open loop that teases what is coming; include at least one absurd-but-true fact (extreme scale, age, distance, rarity, or consequence) that makes the viewer think "how is this even possible?"; include at least one share-worthy fact; save the most interesting fact for the final ~5 seconds. Do NOT fabricate numbers, dates, or names — if unsure, describe the scale qualitatively. Wherever possible, connect the topic to human survival, daily life, the future, money, technology, or human curiosity so it instantly feels relevant.';
 
 const FACTS_VISUALS =
-  'LENGTH: approximately 90-110 words, suitable for about 40 seconds of narration.\n\n' +
-  'VISUAL DIRECTION: highly dynamic visuals that change every 3-4 seconds and directly support the narration - close-ups, maps, satellite imagery, scientific visuals, motion graphics, historical and news footage, nature footage, and dramatic zooms. Avoid generic stock visuals.';
+  'LENGTH: about 110-130 words, ~70-80 seconds of narration. Fast pacing, no filler.\n\n' +
+  'VISUAL DIRECTION: highly dynamic visuals that change every 3-4 seconds and directly support each line — close-ups, maps, satellite imagery, scientific animations, historical and news footage, space visuals, archaeological finds, motion graphics, and dramatic zooms. Avoid generic stock visuals.';
+
+const HINDI_OPEN_LOOPS =
+  'OPEN LOOPS — use this natural Hindi cadence: "लेकिन असली रहस्य अभी बाकी है...", "और यहीं से कहानी और अजीब हो जाती है...", "लेकिन वैज्ञानिकों को जो अगला सबूत मिला, उसने सबको चौंका दिया...", "और फिर कुछ ऐसा मिला जिसकी किसी ने उम्मीद नहीं की थी...". The absurd-but-true moment should make the viewer think "ये सच कैसे हो सकता है?".';
+
+const ENGLISH_OPEN_LOOPS =
+  'OPEN LOOPS — tease what is coming: "but the real mystery is still ahead...", "and this is where it gets strange...", "but the next piece of evidence changed everything...", "and then they found something no one expected...".';
 
 const DEFAULT_TEMPLATES: PromptTemplate[] = [
   {
     id: 'hindi-facts',
-    name: 'Hindi Facts (Hinglish)',
+    name: 'Hindi Mystery (Hinglish)',
     body:
-      'You are writing for a Hindi facts channel in a natural Hinglish style (Hindi written in the Devanagari script, with common English words mixed in the way Indians actually speak). The video is a ~40 second YouTube Short.\n\n' +
-      FACTS_RETENTION +
+      'You are writing for a Hindi facts/mystery channel in a natural Hinglish style (Hindi written in the Devanagari script, with common English words mixed in the way Indians actually speak). The video is a ~70-80 second YouTube Short.\n\n' +
+      FACTS_GOAL +
+      '\n\n' +
+      FACTS_STRUCTURE +
+      '\n\n' +
+      FACTS_RULES +
       '\n\nLANGUAGE: Write the narration in natural, spoken Hindi using the DEVANAGARI script. This is critical for audio quality: do NOT romanize — never write Hindi words in English/Latin letters (e.g. write "क्या आपको पता है", never "Kya aapko pata hai"). Keep it casual and conversational; it is fine to keep widely-used English words (science, planet, technology, internet, discover) in English where that sounds natural, but every Hindi word MUST be in Devanagari. Avoid hard, Sanskritized, poetic or textbook Hindi. Use short sentences and natural pauses (commas, ellipses ...). It must sound natural spoken by an ElevenLabs AI voice.\n\n' +
+      HINDI_OPEN_LOOPS +
+      '\n\n' +
       FACTS_VISUALS
   },
   {
     id: 'english-facts',
-    name: 'English Facts Channel',
+    name: 'English Mystery Channel',
     body:
-      'You are writing for an English-language facts channel. The video is a ~40 second YouTube Short.\n\n' +
-      FACTS_RETENTION +
+      'You are writing for an English-language facts/mystery channel. The video is a ~70-80 second YouTube Short.\n\n' +
+      FACTS_GOAL +
+      '\n\n' +
+      FACTS_STRUCTURE +
+      '\n\n' +
+      FACTS_RULES +
       '\n\nLANGUAGE: Write in clear, conversational English with broad global appeal. Avoid jargon and overly complex words. Use short, punchy sentences and natural pauses (commas, ellipses ...). It must sound natural spoken by an ElevenLabs AI voice.\n\n' +
+      ENGLISH_OPEN_LOOPS +
+      '\n\n' +
       FACTS_VISUALS
   }
 ];
 
 export function listTemplates(): PromptTemplate[] {
   ensureBaseDirs();
-  if (!existsSync(TEMPLATES_FILE)) {
-    writeJson(TEMPLATES_FILE, DEFAULT_TEMPLATES);
-    return DEFAULT_TEMPLATES;
-  }
-  return readJsonOr<PromptTemplate[]>(TEMPLATES_FILE, DEFAULT_TEMPLATES);
+  const existing = existsSync(TEMPLATES_FILE) ? readJsonOr<PromptTemplate[]>(TEMPLATES_FILE, []) : [];
+  // Built-in templates (matched by id) are app-managed: refresh them to the
+  // current canonical copy on every load so prompt upgrades roll out, while
+  // preserving any templates the user created themselves. (To customize a
+  // built-in, "Save as template" makes an independent user copy.)
+  const builtinIds = new Set(DEFAULT_TEMPLATES.map((t) => t.id));
+  const userTemplates = existing.filter((t) => !builtinIds.has(t.id));
+  const merged = [...DEFAULT_TEMPLATES, ...userTemplates];
+  if (JSON.stringify(existing) !== JSON.stringify(merged)) saveTemplates(merged);
+  return merged;
 }
 
 function saveTemplates(list: PromptTemplate[]) {

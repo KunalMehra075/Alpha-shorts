@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { ah } from '../lib/async';
 import { addScene, getScenes, readManifest, removeScene, updateScene } from '../lib/store';
-import { addSceneFromMedia, buildBreakdown } from '../lib/scenes';
+import { addSceneFromMedia } from '../lib/scenes';
+import { getAssetJobs, startBreakdownJob } from '../lib/assetJobs';
 
 export const scenesRouter = Router({ mergeParams: true });
 
@@ -39,11 +40,22 @@ scenesRouter.get(
   })
 );
 
-// POST build the breakdown from the script OR the caption transcript.
+// POST start the breakdown (from the script OR caption transcript) as a
+// background job — returns immediately; the client polls GET /scenes/jobs.
 scenesRouter.post(
   '/breakdown',
-  ah(async (req, res) => {
-    res.status(201).json(await buildBreakdown(pid(req)));
+  ah((req, res) => {
+    readManifest(pid(req)); // 404 if project missing
+    res.status(202).json(startBreakdownJob(pid(req)));
+  })
+);
+
+// GET the live status of the breakdown + autofill jobs for this project.
+scenesRouter.get(
+  '/jobs',
+  ah((req, res) => {
+    readManifest(pid(req));
+    res.json(getAssetJobs(pid(req)));
   })
 );
 

@@ -944,30 +944,114 @@ function SceneSettings({
 // ── Live preview (mock player) ────────────────────────────────────────────────
 type MotionOpts = { zoom: number; intensity: number; motion: string };
 
+// Dashboard effect label → engine effect token (mirror of server video.ts maps),
+// split by asset kind so the preview resolves the same token the render does.
+const IMG_EFFECT_TOKENS: Record<string, string> = {
+  'zoom in': 'kenburns-in',
+  'zoom out': 'kenburns-out',
+  'pan left': 'pan-left',
+  'pan right': 'pan-right',
+  'ken burns': 'kenburns-in',
+  parallax: 'parallax',
+  'slow rotate': 'parallax',
+  'depth effect': 'parallax'
+};
+const VID_EFFECT_TOKENS: Record<string, string> = {
+  'slow zoom': 'zoom-in',
+  'crop and scale': 'zoom-in',
+  'speed adjustment': 'zoom-in',
+  'motion blur': 'drift',
+  'dynamic focus': 'zoom-out',
+  'zoom in': 'zoom-in',
+  'zoom out': 'zoom-out'
+};
+function effectToken(effect: string, kind: 'video' | 'image'): string {
+  const k = (effect || '').toLowerCase();
+  return kind === 'video' ? VID_EFFECT_TOKENS[k] ?? 'zoom-in' : IMG_EFFECT_TOKENS[k] ?? 'kenburns-in';
+}
+
+// Canonical scene scale/pan — must stay identical to remotion/lib/sceneMotion.js
+// so the preview matches the render. zoom 50→1×, 100→2×, 0→½×.
 function effectTransform(
   effect: string,
   p: number,
+  kind: 'video' | 'image',
   opts: MotionOpts = { zoom: 50, intensity: 50, motion: 'cinematic' }
 ): { transform: string; filter?: string } {
-  const e = effect.toLowerCase();
-  // Mirror the renderer's scaling so the preview tracks the Scene-settings sliders
-  // (50% = the previous defaults).
-  const motionMul = opts.motion === 'subtle' ? 0.6 : opts.motion === 'energetic' ? 1.6 : 1.0;
-  const zd = 0.12 * (opts.zoom / 50) * motionMul; // zoom delta
-  const pan = 4 * (opts.intensity / 50) * motionMul; // % pan
-  const cover = 1.04 + (pan * 2) / 100;
-  if (e.includes('zoom out')) return { transform: `scale(${1.02 + zd * (1 - p)})` };
-  if (e.includes('zoom') || e.includes('focus')) return { transform: `scale(${1.02 + zd * p})` };
-  if (e.includes('pan left')) return { transform: `scale(${cover}) translateX(${pan * (1 - 2 * p)}%)` };
-  if (e.includes('pan right')) return { transform: `scale(${cover}) translateX(${-pan * (1 - 2 * p)}%)` };
-  if (e.includes('ken burns'))
-    return { transform: `scale(${1.04 + zd * p}) translate(${pan * 0.3 * (1 - 2 * p)}%, ${pan * 0.3 * (1 - 2 * p)}%)` };
-  if (e.includes('parallax'))
-    return { transform: `scale(${1.04 + zd * 0.6 * p}) translateY(${pan * 0.6 * (1 - 2 * p)}%)` };
-  if (e.includes('rotate')) return { transform: `scale(${cover}) rotate(${(p - 0.5) * 3 * (pan / 4)}deg)` };
-  if (e.includes('motion blur')) return { transform: `scale(${1.02 + zd * p})`, filter: 'blur(1px)' };
-  if (e.includes('crop')) return { transform: `scale(${1.02 + zd * p})` };
-  return { transform: `scale(${1.02 + zd * p})` };
+  const token = effectToken(effect, kind);
+  const base = Math.pow(2, (opts.zoom - 50) / 50);
+  const mm = opts.motion === 'subtle' ? 0.6 : opts.motion === 'energetic' ? 1.6 : 1.0;
+  const zoomAmt = 0.12 * mm;
+  const pan = 4 * (opts.intensity / 50) * mm;
+  const edge = 1 + (Math.abs(pan) * 1.5) / 100;
+
+  let scale = base * edge;
+  let x = 0;
+  let y = 0;
+  switch (token) {
+    case 'kenburns-out':
+      scale = base * edge * (1 + zoomAmt * (1 - p));
+      x = pan * 0.3 * (2 * p - 1);
+      break;
+    case 'zoom-out':
+      scale = base * edge * (1 + zoomAmt * (1 - p));
+      break;
+    case 'pan-left':
+      scale = base * edge;
+      x = pan * (1 - 2 * p);
+      break;
+    case 'pan-right':
+      scale = base * edge;
+      x = -pan * (1 - 2 * p);
+      break;
+    case 'parallax':
+      scale = base * edge * (1 + zoomAmt * 0.6 * p);
+      y = pan * 0.6 * (1 - 2 * p);
+      break;
+    case 'drift':
+      scale = base * edge * (1 + zoomAmt * 0.3);
+      x = pan * 0.5 * (2 * p - 1);
+      break;
+    case 'kenburns-in':
+      scale = base * edge * (1 + zoomAmt * p);
+      x = pan * 0.3 * (1 - 2 * p);
+      break;
+    case 'zoom-in':
+    default:
+      scale = base * edge * (1 + zoomAmt * p);
+      break;
+  }
+  return { transform: `translate(${x}%, ${y}%) scale(${scale})` };
+}
+
+// Dashboard transition label → engine token (mirror of server video.ts).
+const TRANSITION_TOKENS: Record<string, string> = {
+  fade: 'fade',
+  crossfade: 'fade',
+  'blur transition': 'fade',
+  zoom: 'zoom',
+  'scale transition': 'zoom',
+  'slide left': 'slide-left',
+  push: 'slide-left',
+  'slide right': 'slide-right'
+};
+
+// Entrance transition for the PREVIEW — mirrors remotion/components/SceneTransition.
+// `t` is 0→1 progress over the transition window; frameW is the preview width so a
+// slide travels exactly one frame, matching the render's full-width slide.
+function transitionStyle(transition: string, t: number, frameW: number): { opacity: number; transform: string } {
+  const tok = TRANSITION_TOKENS[(transition || '').toLowerCase()] ?? 'fade';
+  switch (tok) {
+    case 'slide-left':
+      return { opacity: 1, transform: `translateX(${(1 - t) * frameW}px)` };
+    case 'slide-right':
+      return { opacity: 1, transform: `translateX(${-(1 - t) * frameW}px)` };
+    case 'zoom':
+      return { opacity: t, transform: `scale(${1.15 + (1 - 1.15) * t})` };
+    case 'fade':
+    default:
+      return { opacity: t, transform: '' };
+  }
 }
 
 // Element entrance/idle animation for the PREVIEW, in seconds-since-start.
@@ -1182,15 +1266,21 @@ function EditorPreview({
   // Which clip is active at `time`.
   const active = clips.find((c) => time >= c.start && time < c.start + c.durationSec) ?? clips[0];
   const p = active ? Math.min(1, (time - active.start) / Math.max(0.001, active.durationSec)) : 0;
+  const activeKind: 'video' | 'image' = active?.visualType === 'Video' ? 'video' : 'image';
   const fx = active
-    ? effectTransform(active.effect, p, {
+    ? effectTransform(active.effect, p, activeKind, {
         zoom: active.zoom,
         intensity: active.intensity,
         motion: active.motion
       })
-    : { transform: 'none' };
-  // Brief transition fade at the start of each clip.
-  const fadeT = active ? Math.min(1, (time - active.start) / 0.4) : 1;
+    : { transform: 'none', filter: undefined as string | undefined };
+  // Entrance transition — mirrors the render (fade / zoom / slide) over a 0.5s
+  // window. Combine the transition transform (outer) with the scene's Ken Burns
+  // transform (inner), the same nesting the render uses.
+  const transP = active ? Math.min(1, (time - active.start) / 0.5) : 1;
+  const tr = active ? transitionStyle(active.transition, transP, frameW) : { opacity: 1, transform: '' };
+  const fxTransform = `${tr.transform} ${fx.transform}`.trim();
+  const fadeT = tr.opacity;
 
   // Scrub the preview <video> to match the playhead — only while PAUSED.
   // During playback we let the element run on its own media clock (see the
@@ -1350,7 +1440,7 @@ function EditorPreview({
                 playsInline
                 preload="auto"
                 className="size-full object-cover"
-                style={{ transform: fx.transform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
+                style={{ transform: fxTransform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
               />
             ) : (
               <img
@@ -1358,7 +1448,7 @@ function EditorPreview({
                 src={active.thumb}
                 alt=""
                 className="size-full object-cover"
-                style={{ transform: fx.transform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
+                style={{ transform: fxTransform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
               />
             ))}
           {/* Element overlays (below captions). Selected one is draggable. */}

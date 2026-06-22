@@ -5,7 +5,6 @@ import { ah } from '../lib/async';
 import { AssetRef } from '../lib/schema';
 import { ensureSceneRows, readManifest } from '../lib/store';
 import {
-  autofill,
   clearScene,
   generateSceneImage,
   saveSceneMeta,
@@ -16,6 +15,7 @@ import {
   setSceneTrim,
   uploadScene
 } from '../lib/assets';
+import { startAutofillJob } from '../lib/assetJobs';
 
 export const assetsRouter = Router({ mergeParams: true });
 
@@ -154,10 +154,12 @@ assetsRouter.post(
   })
 );
 
-// POST auto-fill every unselected scene with its top-ranked candidate.
+// POST start auto-fill as a background job — returns immediately; the client
+// polls GET /scenes/jobs and watches scenes fill in via GET /assets.
 assetsRouter.post(
   '/autofill',
-  ah(async (req, res) => {
-    res.json(await autofill({ id: pid(req) }));
+  ah((req, res) => {
+    readManifest(pid(req));
+    res.status(202).json(startAutofillJob(pid(req)));
   })
 );

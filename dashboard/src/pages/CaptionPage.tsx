@@ -79,8 +79,11 @@ export function CaptionPage() {
   const runGenerate = async () => {
     if (!settings) return;
     try {
-      await generate.mutateAsync({ language, settings });
-      toast.success('Captions transcribed');
+      // "Generate Captions" / "Re-transcribe" always re-runs Whisper from scratch
+      // (force) so switching the language actually produces a fresh transcript
+      // instead of reusing the cached one.
+      await generate.mutateAsync({ language, settings, force: true });
+      toast.success(caps?.hasTranscript ? 'Re-transcribed' : 'Captions transcribed');
     } catch (e: any) {
       toast.error(String(e.message ?? e));
     }
@@ -97,7 +100,12 @@ export function CaptionPage() {
       return;
     }
     try {
-      const state = await generate.mutateAsync({ language, settings: next });
+      // Re-chunk only: reuse the cached Whisper words (no re-transcribe), so send
+      // the transcript's existing language to avoid the language-mismatch force.
+      const state = await generate.mutateAsync({
+        language: caps?.language ?? language,
+        settings: next
+      });
       setSettings(state.settings);
       setLines(state.lines);
       setDirty(false);

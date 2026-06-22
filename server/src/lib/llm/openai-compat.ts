@@ -33,8 +33,11 @@ export abstract class OpenAICompatStrategy implements ScriptStrategy {
     return !!this.apiKey();
   }
 
-  // Shared Chat Completions call returning the raw message content.
-  protected async chat(system: string, user: string): Promise<string> {
+  // Shared Chat Completions call returning the raw message content. maxTokens is
+  // tunable per call: the breakdown of a long (70-80s) script into many scenes,
+  // each with a detailed image prompt, needs far more room than 2000 or the JSON
+  // gets truncated and fails to parse (silently falling back to mock).
+  protected async chat(system: string, user: string, maxTokens = 2000): Promise<string> {
     const key = this.apiKey();
     if (!key) throw new Error(`${this.name}: API key not configured`);
 
@@ -56,7 +59,7 @@ export abstract class OpenAICompatStrategy implements ScriptStrategy {
             { role: 'user', content: user }
           ],
           temperature: 0.85,
-          max_tokens: 2000,
+          max_tokens: maxTokens,
           response_format: { type: 'json_object' }
         })
       });
@@ -88,7 +91,7 @@ export abstract class OpenAICompatStrategy implements ScriptStrategy {
 
   async breakdown(input: BreakdownInput): Promise<BreakdownResult> {
     const { system, user } = buildDirectorMessages(input);
-    const { scenes } = parseBreakdown(await this.chat(system, user));
+    const { scenes } = parseBreakdown(await this.chat(system, user, 8000));
     return { scenes, provider: this.name };
   }
 

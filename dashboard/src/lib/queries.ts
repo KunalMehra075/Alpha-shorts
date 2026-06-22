@@ -203,11 +203,13 @@ export function useCaptions(id: string | undefined) {
 export function useGenerateCaptions(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { language?: string; settings?: import('./types').CaptionSettings }) =>
+    mutationFn: (body: { language?: string; settings?: import('./types').CaptionSettings; force?: boolean }) =>
       api.generateCaptions(id, body),
     onSuccess: (state) => {
       qc.setQueryData(qk.captions(id), state);
       qc.invalidateQueries({ queryKey: qk.captions(id) });
+      // Generating captions re-times any existing scene breakdown to the audio.
+      qc.invalidateQueries({ queryKey: qk.scenes(id) });
       qc.invalidateQueries({ queryKey: qk.project(id) });
       qc.invalidateQueries({ queryKey: qk.projects });
     }
@@ -487,16 +489,32 @@ export function useScenes(id: string | undefined) {
   });
 }
 
+// Polls the breakdown/autofill background jobs while either is running, so
+// progress survives navigating away and back.
+export function useSceneJobs(id: string | undefined) {
+  return useQuery({
+    queryKey: ['scene-jobs', id ?? ''] as const,
+    queryFn: () => api.getSceneJobs(id!),
+    enabled: !!id,
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      const running = d?.breakdown?.status === 'running' || d?.autofill?.status === 'running';
+      return running ? 2000 : false;
+    }
+  });
+}
+
+// Starts the breakdown as a background job; completion is observed via useSceneJobs.
 export function useBuildBreakdown(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.buildBreakdown(id),
-    onSuccess: (r) => {
-      qc.setQueryData(qk.scenes(id), r.scenes);
-      qc.invalidateQueries({ queryKey: qk.scenes(id) });
-      qc.invalidateQueries({ queryKey: qk.assets(id) });
-      qc.invalidateQueries({ queryKey: qk.project(id) });
-      qc.invalidateQueries({ queryKey: qk.projects });
+    mutationFn: () => api.startBreakdown(id),
+    onSuccess: (job) => {
+      qc.setQueryData(['scene-jobs', id], (old: any) => ({
+        breakdown: job,
+        autofill: old?.autofill ?? null
+      }));
+      qc.invalidateQueries({ queryKey: ['scene-jobs', id] });
     }
   });
 }
@@ -627,13 +645,17 @@ export function useUploadSceneAsset(id: string) {
   });
 }
 
+// Starts auto-fill as a background job; scenes fill in via the assets poll.
 export function useAutofillAssets(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.autofillAssets(id),
-    onSuccess: (state) => {
-      qc.setQueryData(qk.assets(id), state);
-      invalidateAssets(qc, id);
+    mutationFn: () => api.startAutofill(id),
+    onSuccess: (job) => {
+      qc.setQueryData(['scene-jobs', id], (old: any) => ({
+        breakdown: old?.breakdown ?? null,
+        autofill: job
+      }));
+      qc.invalidateQueries({ queryKey: ['scene-jobs', id] });
     }
   });
 }
