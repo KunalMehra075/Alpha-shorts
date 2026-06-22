@@ -280,6 +280,8 @@ export const api = {
     return res.json() as Promise<ElementItem>;
   },
   deleteElement: (id: string) => request<ElementItem[]>(`/elements/${id}`, { method: 'DELETE' }),
+  renameElement: (id: string, name: string) =>
+    request<ElementItem[]>(`/elements/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
 
   // per-project element placements
   getProjectElements: (id: string) => request<ElementPlacement[]>(`/projects/${id}/video/elements`),
@@ -295,6 +297,17 @@ export const api = {
     }),
   removeElement: (id: string, placementId: string) =>
     request<ElementPlacement[]>(`/projects/${id}/video/elements/${placementId}`, { method: 'DELETE' }),
+  // global elements — background removal (chroma key)
+  elementBgPreview: (elementId: string, params: import('./types').BgParams) =>
+    request<{ file: string }>(`/elements/${elementId}/bg-preview`, {
+      method: 'POST',
+      body: JSON.stringify(params)
+    }),
+  elementBgApply: (elementId: string, params: import('./types').BgParams) =>
+    request<ElementItem>(`/elements/${elementId}/bg-apply`, {
+      method: 'POST',
+      body: JSON.stringify(params)
+    }),
   addElementLayer: (id: string) =>
     request<{ elementLayers: number }>(`/projects/${id}/video/elements/layers`, { method: 'POST' }),
   removeElementLayer: (id: string, layer: number) =>

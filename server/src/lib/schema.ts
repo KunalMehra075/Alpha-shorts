@@ -171,18 +171,7 @@ export const ElementPlacement = z.object({
   startSec: z.number().default(0),
   endSec: z.number().default(0),
   animation: z.enum(['none', 'fade', 'pop', 'pulse', 'slide']).default('none'),
-  // Chroma key (green-screen removal). When enabled for an image element, a
-  // transparent PNG is baked to `keyedFile` and used in preview + render.
-  chroma: z
-    .object({
-      enabled: z.boolean().default(false),
-      color: z.string().default('#00ff00'),
-      similarity: z.number().default(0.3), // 0..1 — how wide a color range to remove
-      blend: z.number().default(0.1), // 0..1 — edge softness
-      despill: z.boolean().default(true)
-    })
-    .default({ enabled: false, color: '#00ff00', similarity: 0.3, blend: 0.1, despill: true }),
-  keyedFile: z.string().nullable().default(null) // baked transparent variant
+  muted: z.boolean().default(false) // video elements: keep audio by default; toggle to mute
 });
 export type ElementPlacement = z.infer<typeof ElementPlacement>;
 

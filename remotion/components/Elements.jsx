@@ -16,7 +16,7 @@ import { Gif } from '@remotion/gif';
 const ElementMedia = ({ el }) => {
   const style = { width: '100%', height: 'auto', display: 'block' };
   if (el.kind === 'gif') return <Gif src={staticFile(el.src)} fit="contain" style={style} />;
-  if (el.kind === 'video') return <OffthreadVideo src={staticFile(el.src)} muted loop style={style} />;
+  if (el.kind === 'video') return <OffthreadVideo src={staticFile(el.src)} muted={el.muted !== false} loop style={style} />;
   return <Img src={staticFile(el.src)} style={style} />;
 };
 

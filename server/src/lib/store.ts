@@ -625,6 +625,7 @@ export function updateElementPlacement(
   if (patch.endSec !== undefined) rec.endSec = Math.max(0, patch.endSec);
   if (patch.layer !== undefined) rec.layer = Math.max(0, Math.round(patch.layer));
   if (patch.animation !== undefined) rec.animation = patch.animation;
+  if (patch.muted !== undefined) rec.muted = patch.muted;
   if (rec.endSec <= rec.startSec) rec.endSec = Math.round((rec.startSec + 0.5) * 100) / 100;
   m.elements.sort((a, b) => a.startSec - b.startSec);
   if (rec.layer + 1 > m.elementLayers) m.elementLayers = rec.layer + 1;
@@ -636,24 +637,7 @@ export function removeElementPlacement(id: string, placementId: string): Manifes
   const rec = m.elements.find((e) => e.id === placementId);
   if (!rec) throw new HttpError(404, `Element placement "${placementId}" not found.`);
   removePath(join(projectDir(id), rec.file));
-  if (rec.keyedFile) removePath(join(projectDir(id), rec.keyedFile));
   m.elements = m.elements.filter((e) => e.id !== placementId);
-  writeManifest(m);
-  return m.elements;
-}
-
-// Persist chroma settings + the baked keyed-file path for one placement.
-export function setElementChroma(
-  id: string,
-  placementId: string,
-  chroma: Manifest['elements'][number]['chroma'],
-  keyedFile: string | null
-): Manifest['elements'] {
-  const m = readManifest(id);
-  const rec = m.elements.find((e) => e.id === placementId);
-  if (!rec) throw new HttpError(404, `Element placement "${placementId}" not found.`);
-  rec.chroma = chroma;
-  rec.keyedFile = keyedFile;
   writeManifest(m);
   return m.elements;
 }

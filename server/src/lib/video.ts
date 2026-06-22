@@ -278,7 +278,8 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
       rotation: p.rotation,
       fromSec: Math.max(0, p.startSec),
       toSec: Math.min(p.endSec, totalSec),
-      animation: p.animation
+      animation: p.animation,
+      muted: p.muted
     }))
     .filter((e) => e.toSec > e.fromSec);
 

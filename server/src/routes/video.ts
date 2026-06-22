@@ -78,7 +78,8 @@ const ElementPatch = z.object({
   startSec: z.number().min(0).optional(),
   endSec: z.number().min(0).optional(),
   layer: z.number().int().min(0).optional(),
-  animation: z.enum(['none', 'fade', 'pop', 'pulse', 'slide']).optional()
+  animation: z.enum(['none', 'fade', 'pop', 'pulse', 'slide']).optional(),
+  muted: z.boolean().optional()
 });
 
 // GET all render records (with live progress overlaid).

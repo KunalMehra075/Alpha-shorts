@@ -160,7 +160,7 @@ export function VideoEditorPage() {
   }, [scenes, editor, assetRows, id]);
 
   const total = clips.reduce((a, c) => a + c.durationSec, 0);
-  const audioTake = project.audio.versions.find((v) => v.version === project.audio.currentVersion);
+  const audioTake = project.audio.versions.find((v:any) => v.version === project.audio.currentVersion);
   const music = editor.timeline.music;
   const captionsEnabled = editor.timeline.captionsEnabled;
 
@@ -336,6 +336,7 @@ export function VideoEditorPage() {
               selectedElementId={selectedElementId}
               onSelectElement={selectElement}
               onElementMove={(pid, x, y) => updateElement.mutate({ placementId: pid, patch: { x, y } })}
+              onElementResize={(pid, size) => updateElement.mutate({ placementId: pid, patch: { size } })}
               projectId={id}
               onScrubToScene={setSelected}
               timeRef={timeRef}
@@ -834,10 +835,10 @@ export function VideoEditorPage() {
                     title={`${el.name} — drag onto a lane or click to add`}
                     className="group relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/30 p-1.5 hover:border-accent/60"
                   >
-                    {el.kind === 'video' ? (
+                    {el.kind === 'video' && !el.thumb ? (
                       <video src={elementUrl(el.file)} muted preload="metadata" className="max-h-full max-w-full object-contain" />
                     ) : (
-                      <img src={elementUrl(el.file)} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
+                      <img src={elementUrl(el.thumb || el.file)} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
                     )}
                     <span className="absolute left-1 top-1 rounded bg-black/55 px-1 text-[8px] uppercase text-white">
                       {el.kind}
@@ -1020,6 +1021,7 @@ function EditorPreview({
   selectedElementId = null,
   onSelectElement,
   onElementMove,
+  onElementResize,
   projectId,
   onScrubToScene,
   timeRef,
@@ -1040,6 +1042,7 @@ function EditorPreview({
   selectedElementId?: string | null;
   onSelectElement?: (id: string | null) => void;
   onElementMove?: (id: string, x: number, y: number) => void;
+  onElementResize?: (id: string, size: number) => void;
   projectId: string;
   onScrubToScene: (i: number) => void;
   timeRef?: React.MutableRefObject<number>;
@@ -1055,6 +1058,7 @@ function EditorPreview({
   const sfxRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const lastT = useRef(0);
   const videoElRef = useRef<HTMLVideoElement>(null);
+  const elVideoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   // Fire each placed sound when the playhead crosses its start time.
   useEffect(() => {
@@ -1259,10 +1263,75 @@ function EditorPreview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elDrag?.id]);
 
+  // Resize a selected element via its bottom-right handle. Aspect ratio is locked
+  // (size only drives width %), so we derive size purely from the pointer's
+  // horizontal distance to the element's center: corner sits at center ± width/2.
+  const [elResize, setElResize] = useState<{ id: string; size: number } | null>(null);
+  useEffect(() => {
+    if (!elResize) return;
+    const move = (e: PointerEvent) => {
+      const frame = frameRef.current;
+      const el = elements.find((x) => x.id === elResize.id);
+      if (!frame || !el) return;
+      const r = frame.getBoundingClientRect();
+      const centerX = r.left + (el.x / 100) * r.width;
+      const halfW = Math.abs(e.clientX - centerX);
+      const size = Math.max(3, Math.min(200, (halfW / r.width) * 200));
+      setElResize((d) => (d ? { ...d, size } : d));
+    };
+    const up = () => {
+      setElResize((d) => {
+        if (d) onElementResize?.(d.id, Math.round(d.size * 10) / 10);
+        return null;
+      });
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elResize?.id]);
+
   const visibleElements = elements
     .filter((el) => time >= el.startSec && time < el.endSec)
     .slice()
     .sort((a, b) => a.layer - b.layer);
+
+  // Drive each in-range element <video> from the transport: play (with audio
+  // unless muted) while playing, pause + seek when paused/scrubbing.
+  useEffect(() => {
+    for (const el of visibleElements) {
+      if (el.kind !== 'video') continue;
+      const v = elVideoRefs.current[el.id];
+      if (!v) continue;
+      v.muted = !!el.muted;
+      const desired = Math.max(0, time - el.startSec);
+      if (playing) {
+        if (v.paused) {
+          if (Math.abs(v.currentTime - desired) > 0.3) {
+            try {
+              v.currentTime = desired;
+            } catch {
+              /* ignore */
+            }
+          }
+          v.play().catch(() => {});
+        }
+      } else {
+        if (!v.paused) v.pause();
+        if (Math.abs(v.currentTime - desired) > 0.05) {
+          try {
+            v.currentTime = desired;
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [time, playing, visibleElements]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -1295,14 +1364,15 @@ function EditorPreview({
           {/* Element overlays (below captions). Selected one is draggable. */}
           {visibleElements.map((el) => {
             const pos = elDrag && elDrag.id === el.id ? elDrag : { x: el.x, y: el.y };
+            const liveSize = elResize && elResize.id === el.id ? elResize.size : el.size;
             const selected = el.id === selectedElementId;
+            const busy = (elDrag && elDrag.id === el.id) || (elResize && elResize.id === el.id);
             const src = `/media/${projectId}/${el.file}`;
-            // No entrance animation while actively dragging this element, so
-            // positioning stays steady; otherwise mirror the render.
-            const anim =
-              elDrag && elDrag.id === el.id
-                ? { extra: '', opacity: 1 }
-                : elementPreviewAnim(el.animation, time - el.startSec);
+            // No entrance animation while actively dragging/resizing this element,
+            // so positioning stays steady; otherwise mirror the render.
+            const anim = busy
+              ? { extra: '', opacity: 1 }
+              : elementPreviewAnim(el.animation, time - el.startSec);
             return (
               <div
                 key={el.id}
@@ -1316,7 +1386,7 @@ function EditorPreview({
                   position: 'absolute',
                   left: `${pos.x}%`,
                   top: `${pos.y}%`,
-                  width: `${el.size}%`,
+                  width: `${liveSize}%`,
                   transform: `translate(-50%, -50%) rotate(${el.rotation || 0}deg)${anim.extra}`,
                   opacity: anim.opacity,
                   cursor: 'move',
@@ -1325,9 +1395,42 @@ function EditorPreview({
                 }}
               >
                 {el.kind === 'video' ? (
-                  <video src={src} muted loop autoPlay playsInline className="block w-full" />
+                  <video
+                    ref={(n) => {
+                      elVideoRefs.current[el.id] = n;
+                    }}
+                    src={src}
+                    loop
+                    playsInline
+                    muted={el.muted}
+                    className="pointer-events-none block w-full"
+                  />
                 ) : (
                   <img src={src} alt="" className="pointer-events-none block w-full" />
+                )}
+                {/* Bottom-right resize handle (aspect locked) — only on the selected element. */}
+                {selected && (
+                  <div
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onSelectElement?.(el.id);
+                      setElResize({ id: el.id, size: liveSize });
+                    }}
+                    title="Drag to resize"
+                    style={{
+                      position: 'absolute',
+                      right: -6,
+                      bottom: -6,
+                      width: 12,
+                      height: 12,
+                      borderRadius: 9999,
+                      background: 'hsl(var(--accent))',
+                      border: '2px solid white',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                      cursor: 'nwse-resize'
+                    }}
+                  />
                 )}
               </div>
             );
@@ -2096,7 +2199,8 @@ function parseNum(v: string, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-// A labelled row: left label + controls, with a hairline divider above.
+// A labelled row laid out as two columns — a fixed heading column on the left
+// and a control column on the right — so controls across rows line up cleanly.
 function SettingRow({
   label,
   first,
@@ -2109,14 +2213,40 @@ function SettingRow({
   return (
     <div
       className={cn(
-        'flex items-center gap-3 px-3.5 py-2.5',
+        'grid grid-cols-[84px_1fr] items-center gap-3 px-4 py-3',
         !first && 'border-t border-border/60'
       )}
     >
-      <span className="w-[68px] shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
-      <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-2">{children}</div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+// Two of these sit side-by-side in a single row (heading + control each), used
+// for the compact Size/Rotate and Animation/Audio pairs.
+function HalfRow({ first, children }: { first?: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className={cn(
+        'grid grid-cols-2 gap-4 px-4 py-3',
+        !first && 'border-t border-border/60'
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function InlineSetting({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -2147,23 +2277,21 @@ function NumField({
     }
   };
   return (
-    <label className={cn('flex items-center gap-1.5 text-sm', disabled && 'opacity-50')}>
-      <span className="text-muted-foreground">{label}</span>
-      <span className="inline-flex items-center">
-        <input
-          type="number"
-          step={step}
-          disabled={disabled}
-          value={display}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-          }}
-          className="h-8 w-16 rounded-md border border-input bg-background px-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-        />
-        {suffix && <span className="ml-1 text-xs text-muted-foreground">{suffix}</span>}
-      </span>
+    <label className={cn('flex items-center gap-2 text-sm', disabled && 'opacity-50')}>
+      {label && <span className="w-11 shrink-0 text-xs text-muted-foreground">{label}</span>}
+      <input
+        type="number"
+        step={step}
+        disabled={disabled}
+        value={display}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+        className="h-8 w-full min-w-0 rounded-md border border-input bg-background px-2.5 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      />
+      {suffix && <span className="w-3 shrink-0 text-xs text-muted-foreground">{suffix}</span>}
     </label>
   );
 }
@@ -2182,6 +2310,7 @@ function ElementInspector({
   onRemove: () => void;
 }) {
   const wholeVideo = !!selected && selected.startSec <= 0.05 && selected.endSec >= total - 0.05;
+  const isImage = selected?.kind === 'image';
 
   return (
     <Card>
@@ -2201,7 +2330,7 @@ function ElementInspector({
           // key by id so in-progress field drafts reset cleanly when the
           // selection changes.
           <div key={selected.id} className="overflow-hidden rounded-xl border border-border">
-            <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/30 px-4 py-3">
               <span className="truncate text-sm font-medium" title={selected.name}>
                 {selected.name}
               </span>
@@ -2214,59 +2343,85 @@ function ElementInspector({
               </button>
             </div>
 
-            <SettingRow label="Position">
-              <NumField label="x" value={selected.x} suffix="%" onCommit={(v) => onChange({ x: v })} />
-              <NumField label="y" value={selected.y} suffix="%" onCommit={(v) => onChange({ y: v })} />
+            <SettingRow label="Position" first>
+              <div className="grid grid-cols-2 gap-2.5">
+                <NumField label="x" value={selected.x} suffix="%" onCommit={(v) => onChange({ x: v })} />
+                <NumField label="y" value={selected.y} suffix="%" onCommit={(v) => onChange({ y: v })} />
+              </div>
             </SettingRow>
 
             <SettingRow label="Duration">
-              <NumField
-                label="start"
-                value={selected.startSec}
-                step={0.1}
-                suffix="s"
-                disabled={wholeVideo}
-                onCommit={(v) => onChange({ startSec: Math.max(0, v) })}
-              />
-              <NumField
-                label="end"
-                value={selected.endSec}
-                step={0.1}
-                suffix="s"
-                disabled={wholeVideo}
-                onCommit={(v) => onChange({ endSec: v })}
-              />
-              <label className="flex items-center gap-1.5 text-sm">
-                <span className="text-muted-foreground">full</span>
-                <Switch
-                  checked={wholeVideo}
-                  onCheckedChange={(on) =>
-                    on
-                      ? onChange({ startSec: 0, endSec: Math.max(0.5, total) })
-                      : onChange({ endSec: Math.min(selected.startSec + 3, total) })
-                  }
-                />
-              </label>
+              <div className="flex items-center gap-2.5">
+                <div className="flex-1">
+                  <NumField
+                    label="start"
+                    value={selected.startSec}
+                    step={0.1}
+                    suffix="s"
+                    disabled={isImage && wholeVideo}
+                    onCommit={(v) => onChange({ startSec: Math.max(0, v) })}
+                  />
+                </div>
+                <div className="flex-1">
+                  <NumField
+                    label="end"
+                    value={selected.endSec}
+                    step={0.1}
+                    suffix="s"
+                    disabled={isImage && wholeVideo}
+                    onCommit={(v) => onChange({ endSec: v })}
+                  />
+                </div>
+                {/* "Full length" only makes sense for static images — videos/gifs
+                    already default to their own native duration. */}
+                {isImage && (
+                  <label className="flex shrink-0 items-center gap-2 text-sm" title="Span the whole video">
+                    <Switch
+                      checked={wholeVideo}
+                      onCheckedChange={(on) =>
+                        on
+                          ? onChange({ startSec: 0, endSec: Math.max(0.5, total) })
+                          : onChange({ endSec: Math.min(selected.startSec + 3, total) })
+                      }
+                    />
+                    <span className="text-xs text-muted-foreground">full</span>
+                  </label>
+                )}
+              </div>
             </SettingRow>
 
-            <SettingRow label="Orientation">
-              <NumField label="Size" value={selected.size} suffix="%" onCommit={(v) => onChange({ size: v })} />
-              <NumField label="Rotate" value={selected.rotation} suffix="°" onCommit={(v) => onChange({ rotation: v })} />
-            </SettingRow>
+            <HalfRow>
+              <InlineSetting label="Size">
+                <NumField label="" value={selected.size} suffix="%" onCommit={(v) => onChange({ size: v })} />
+              </InlineSetting>
+              <InlineSetting label="Rotate">
+                <NumField label="" value={selected.rotation} suffix="°" onCommit={(v) => onChange({ rotation: v })} />
+              </InlineSetting>
+            </HalfRow>
 
-            <SettingRow label="Animation">
-              <Select
-                value={selected.animation}
-                onChange={(e) => onChange({ animation: e.target.value as ElementAnimation })}
-                className="h-8 w-full"
-              >
-                <option value="none">None</option>
-                <option value="fade">Fade in</option>
-                <option value="pop">Pop in</option>
-                <option value="pulse">Pulse</option>
-                <option value="slide">Slide in</option>
-              </Select>
-            </SettingRow>
+            <HalfRow>
+              <InlineSetting label="Animation">
+                <Select
+                  value={selected.animation}
+                  onChange={(e) => onChange({ animation: e.target.value as ElementAnimation })}
+                  className="h-8 w-full"
+                >
+                  <option value="none">None</option>
+                  <option value="fade">Fade in</option>
+                  <option value="pop">Pop in</option>
+                  <option value="pulse">Pulse</option>
+                  <option value="slide">Slide in</option>
+                </Select>
+              </InlineSetting>
+              {selected.kind === 'video' && (
+                <InlineSetting label="Audio">
+                  <label className="flex items-center gap-2 text-sm">
+                    <Switch checked={!selected.muted} onCheckedChange={(on) => onChange({ muted: !on })} />
+                    <span className="text-xs text-muted-foreground">{selected.muted ? 'Muted' : 'Plays sound'}</span>
+                  </label>
+                </InlineSetting>
+              )}
+            </HalfRow>
           </div>
         )}
       </CardContent>

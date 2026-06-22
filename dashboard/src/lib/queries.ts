@@ -335,6 +335,14 @@ export function useDeleteElement() {
   });
 }
 
+export function useRenameElement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.renameElement(id, name),
+    onSuccess: (items) => qc.setQueryData(['element-library'], items)
+  });
+}
+
 // ── Per-project element placements ────────────────────────────────────────────
 export function useProjectElements(id: string | undefined) {
   return useQuery({
@@ -375,6 +383,16 @@ export function useRemoveElement(id: string) {
   return useMutation({
     mutationFn: (placementId: string) => api.removeElement(id, placementId),
     onSuccess: (items) => qc.setQueryData(['project-elements', id], items)
+  });
+}
+
+// Background removal on the global Elements library → adds a new transparent item.
+export function useApplyElementBg() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ elementId, params }: { elementId: string; params: import('./types').BgParams }) =>
+      api.elementBgApply(elementId, params),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['element-library'] })
   });
 }
 

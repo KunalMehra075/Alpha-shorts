@@ -182,7 +182,16 @@ export type ElementItem = {
   kind: ElementKind;
   sizeBytes: number;
   durationSec: number; // 0 for static images
+  thumb?: string | null; // poster image for video elements
   createdAt: string;
+};
+
+// Background-removal (chroma key) parameters for the Elements library tool.
+export type BgParams = {
+  color: string; // hex, e.g. #00ff00
+  similarity: number; // 0..1 (strength)
+  blend: number; // 0..1 (edge softness)
+  despill: boolean;
 };
 
 export type ElementPlacement = {
@@ -198,6 +207,7 @@ export type ElementPlacement = {
   startSec: number;
   endSec: number;
   animation: ElementAnimation;
+  muted: boolean; // video elements: mute/keep audio in the render
 };
 
 export type RenderTimelinePayload = {
