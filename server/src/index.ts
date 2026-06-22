@@ -14,6 +14,8 @@ import { mediaRouter } from './routes/media';
 import { GLOBAL_MEDIA_DIR } from './lib/media';
 import { analyticsRouter } from './routes/analytics';
 import { aiRouter } from './routes/ai';
+import { elementsRouter } from './routes/elements';
+import { GLOBAL_ELEMENTS_DIR } from './lib/elements';
 
 // Load the project-root .env (ELEVENLABS_API_KEY, FFPROBE_BIN, …). The server
 // runs from server/, so point dotenv at the root explicitly.
@@ -34,6 +36,7 @@ app.use('/api/sounds', soundsRouter);
 app.use('/api/media-library', mediaRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/elements', elementsRouter);
 
 // Serve project media read-only at /media/<projectId>/...
 app.use('/media', express.static(PROJECTS_DIR));
@@ -41,6 +44,9 @@ app.use('/media', express.static(PROJECTS_DIR));
 app.use('/sounds', express.static(GLOBAL_SOUNDS_DIR));
 // Serve the global media library (images/videos/music) read-only at /library/...
 app.use('/library', express.static(GLOBAL_MEDIA_DIR));
+// Serve the global Elements library read-only at /element-lib/... (distinct from
+// the client-side /elements route).
+app.use('/element-lib', express.static(GLOBAL_ELEMENTS_DIR));
 
 // 404 for unknown API routes
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));

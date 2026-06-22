@@ -17,6 +17,9 @@ export type TimelineScene = {
   effect: string;
   transition: Transition;
   durationSec: number;
+  motion: string; // 'subtle' | 'cinematic' | 'energetic'
+  zoom: number; // 0-100 (50 = default)
+  intensity: number; // 0-100 (50 = default)
 };
 
 export type MusicSettings = {
@@ -59,6 +62,7 @@ type EditorState = {
   setSceneEffect: (id: string, i: number, effect: string) => void;
   setSceneTransition: (id: string, i: number, transition: Transition) => void;
   setSceneDuration: (id: string, i: number, durationSec: number) => void;
+  patchScene: (id: string, i: number, patch: Partial<TimelineScene>) => void;
   applyPreset: (id: string, presetName: string, scenes: Scene[]) => void;
   setMusic: (id: string, patch: Partial<MusicSettings>) => void;
   toggleCaptions: (id: string, enabled: boolean) => void;
@@ -90,7 +94,10 @@ export const useEditorStore = create<EditorState>()(
                 tScenes[i] = {
                   effect: defaultEffect(sc.visualType),
                   transition: randomTransition(`${id}:${i}`),
-                  durationSec: Math.max(0.5, sc.end - sc.start)
+                  durationSec: Math.max(0.5, sc.end - sc.start),
+                  motion: 'cinematic',
+                  zoom: 50,
+                  intensity: 50
                 };
               }
             });
@@ -134,6 +141,17 @@ export const useEditorStore = create<EditorState>()(
           }))
         ),
 
+      patchScene: (id, i, patch) =>
+        set((s) =>
+          withWs(s, id, (ws) => ({
+            ...ws,
+            timeline: {
+              ...ws.timeline,
+              scenes: { ...ws.timeline.scenes, [i]: { ...ws.timeline.scenes[i], ...patch } }
+            }
+          }))
+        ),
+
       applyPreset: (id, presetName, scenes) =>
         set((s) =>
           withWs(s, id, (ws) => {
@@ -144,7 +162,10 @@ export const useEditorStore = create<EditorState>()(
               tScenes[i] = {
                 effect: presetEffect(preset, sc.visualType),
                 transition: preset.transition,
-                durationSec: tScenes[i]?.durationSec ?? Math.max(0.5, sc.end - sc.start)
+                durationSec: tScenes[i]?.durationSec ?? Math.max(0.5, sc.end - sc.start),
+                motion: tScenes[i]?.motion ?? 'cinematic',
+                zoom: tScenes[i]?.zoom ?? 50,
+                intensity: tScenes[i]?.intensity ?? 50
               };
             });
             return { ...ws, timeline: { ...ws.timeline, preset: presetName, scenes: tScenes } };

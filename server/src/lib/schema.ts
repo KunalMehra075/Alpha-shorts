@@ -155,6 +155,37 @@ export const SoundPlacement = z.object({
 });
 export type SoundPlacement = z.infer<typeof SoundPlacement>;
 
+// A visual overlay element placed on the video timeline (image/gif/video copied
+// into the project from the global Elements library). x/y are the element CENTER
+// as a percentage of the frame; size is the width as a percentage of frame width.
+export const ElementPlacement = z.object({
+  id: z.string(),
+  name: z.string().default(''),
+  file: z.string(), // project-relative, e.g. 'elements/<id>.png'
+  kind: z.enum(['image', 'gif', 'video']).default('image'),
+  layer: z.number().int().default(0), // lane index; higher = front-most
+  x: z.number().default(50), // center %, 0-100
+  y: z.number().default(50), // center %, 0-100
+  size: z.number().default(30), // width % of frame
+  rotation: z.number().default(0), // degrees
+  startSec: z.number().default(0),
+  endSec: z.number().default(0),
+  animation: z.enum(['none', 'fade', 'pop', 'pulse', 'slide']).default('none'),
+  // Chroma key (green-screen removal). When enabled for an image element, a
+  // transparent PNG is baked to `keyedFile` and used in preview + render.
+  chroma: z
+    .object({
+      enabled: z.boolean().default(false),
+      color: z.string().default('#00ff00'),
+      similarity: z.number().default(0.3), // 0..1 — how wide a color range to remove
+      blend: z.number().default(0.1), // 0..1 — edge softness
+      despill: z.boolean().default(true)
+    })
+    .default({ enabled: false, color: '#00ff00', similarity: 0.3, blend: 0.1, despill: true }),
+  keyedFile: z.string().nullable().default(null) // baked transparent variant
+});
+export type ElementPlacement = z.infer<typeof ElementPlacement>;
+
 export const SceneAssets = z.object({
   sceneNumber: z.number(),
   keywords: z.array(z.string()).default([]),
@@ -238,6 +269,9 @@ export const Manifest = z.object({
   library: z.array(LibraryItem).default([]),
   // Sound effects placed on the video timeline.
   sounds: z.array(SoundPlacement).default([]),
+  // Visual overlay elements + how many lanes are shown in the editor.
+  elements: z.array(ElementPlacement).default([]),
+  elementLayers: z.number().int().min(1).default(2),
   // Canonical, editable scene-by-scene breakdown (built in the Assets step from
   // the script OR the caption transcript). `.default([])` so old manifests parse.
   scenes: z.array(Scene).default([]),

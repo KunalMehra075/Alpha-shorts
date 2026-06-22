@@ -6,14 +6,20 @@ import {
   Clapperboard,
   Download,
   Film,
+  Layers,
   Library as LibraryIcon,
   Loader2,
   Music,
   Pause,
   Play,
   Plus,
+  Settings2,
+  Shapes,
   Sparkles,
-  Trash2
+  Trash2,
+  X,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -25,24 +31,32 @@ import { Select } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { TabHeader } from '@/components/TabHeader';
 import { TransitionIcon } from '@/components/TransitionIcon';
-import { cn, libraryUrl, relativeTime } from '@/lib/utils';
+import { cn, elementUrl, libraryUrl, relativeTime } from '@/lib/utils';
 import {
+  useAddElementLayer,
   useAssets,
   useCaptions,
   useDeleteMusic,
   useDeleteRender,
+  useElementLibrary,
   useLibrary,
   useMediaLibrary,
   useMusicFromGlobal,
   useMusicFromLibrary,
+  usePlaceElement,
   usePlaceSound,
+  useProjectElements,
+  useRemoveElement,
+  useRemoveElementLayer,
   useRemovePlacement,
   useRenderVideo,
   useRenders,
   useScenes,
   useSoundLibrary,
+  useUpdateElement,
   useUpdatePlacement,
   useUploadMusic,
   useUploadSound,
@@ -58,7 +72,15 @@ import {
   type Transition
 } from '@/lib/editorOptions';
 import { useEditorStore, useProjectEditor } from '@/lib/editorStore';
-import type { CaptionSettings, RenderRecord, Scene, SoundPlacement, VisualType } from '@/lib/types';
+import type {
+  CaptionSettings,
+  ElementAnimation,
+  ElementPlacement,
+  RenderRecord,
+  Scene,
+  SoundPlacement,
+  VisualType
+} from '@/lib/types';
 
 type Clip = {
   index: number;
@@ -71,6 +93,9 @@ type Clip = {
   effect: string;
   transition: Transition;
   durationSec: number;
+  motion: string;
+  zoom: number;
+  intensity: number;
   start: number; // cumulative
 };
 
@@ -89,6 +114,7 @@ export function VideoEditorPage() {
   const setSceneEffect = useEditorStore((s) => s.setSceneEffect);
   const setSceneTransition = useEditorStore((s) => s.setSceneTransition);
   const setSceneDuration = useEditorStore((s) => s.setSceneDuration);
+  const patchScene = useEditorStore((s) => s.patchScene);
   const setMusic = useEditorStore((s) => s.setMusic);
   const toggleCaptions = useEditorStore((s) => s.toggleCaptions);
 
@@ -123,6 +149,9 @@ export function VideoEditorPage() {
         effect: ts?.effect ?? effectsFor(s.visualType)[0],
         transition: ts?.transition ?? 'Fade',
         durationSec,
+        motion: ts?.motion ?? 'cinematic',
+        zoom: ts?.zoom ?? 50,
+        intensity: ts?.intensity ?? 50,
         start: t
       };
       t += durationSec;
@@ -160,6 +189,69 @@ export function VideoEditorPage() {
   const removePlacement = useRemovePlacement(id);
   const uploadSound = useUploadSound();
   const [soundSearch, setSoundSearch] = useState('');
+
+  // Elements: global library (palette) + per-project placements + lanes.
+  const { data: elementLibData } = useElementLibrary();
+  const elementLib = elementLibData ?? [];
+  const { data: elementsData } = useProjectElements(id);
+  const elements = elementsData ?? [];
+  const elementLayers = project.elementLayers ?? 2;
+  const placeElement = usePlaceElement(id);
+  const updateElement = useUpdateElement(id);
+  const removeElement = useRemoveElement(id);
+  const addElementLayer = useAddElementLayer(id);
+  const removeElementLayer = useRemoveElementLayer(id);
+  const [elementSheetOpen, setElementSheetOpen] = useState(false);
+  const [elementSearch, setElementSearch] = useState('');
+  const [audioSheetOpen, setAudioSheetOpen] = useState(false);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectedSoundId, setSelectedSoundId] = useState<string | null>(null);
+  const selectedElement = elements.find((e) => e.id === selectedElementId) ?? null;
+  // Element and sound selection are mutually exclusive — only one Delete target.
+  const selectElement = (eid: string | null) => {
+    setSelectedElementId(eid);
+    if (eid) setSelectedSoundId(null);
+  };
+  const selectSound = (sid: string | null) => {
+    setSelectedSoundId(sid);
+    if (sid) setSelectedElementId(null);
+  };
+  const moveElementTime = (pid: string, atSec: number) => {
+    const el = elements.find((e) => e.id === pid);
+    if (!el) return;
+    const dur = Math.max(0.5, el.endSec - el.startSec);
+    updateElement.mutate({ placementId: pid, patch: { startSec: atSec, endSec: atSec + dur } });
+  };
+
+  // Shared playback clock for the timeline playhead (written by the preview each
+  // frame; read imperatively so the page doesn't re-render at 60fps) + seek.
+  const timeRef = useRef(0);
+  const seekRef = useRef<(s: number) => void>(() => {});
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [tlZoom, setTlZoom] = useState(1); // timeline horizontal zoom multiplier
+
+  // Delete/Backspace removes whichever timeline item is selected — a sound takes
+  // priority over an element — unless the user is typing in a field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) return;
+      if (selectedSoundId) {
+        e.preventDefault();
+        removePlacement.mutate(selectedSoundId);
+        setSelectedSoundId(null);
+      } else if (selectedElementId) {
+        e.preventDefault();
+        removeElement.mutate(selectedElementId);
+        setSelectedElementId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSoundId, selectedElementId]);
 
   // Real media for the preview player (served from the project).
   const narrationSrc = audioTake ? `/media/${id}/${audioTake.file}` : undefined;
@@ -240,8 +332,15 @@ export function VideoEditorPage() {
               musicVolume={music.volume / 100}
               placements={placements}
               soundsEnabled={soundsEnabled}
+              elements={elements}
+              selectedElementId={selectedElementId}
+              onSelectElement={selectElement}
+              onElementMove={(pid, x, y) => updateElement.mutate({ placementId: pid, patch: { x, y } })}
               projectId={id}
               onScrubToScene={setSelected}
+              timeRef={timeRef}
+              seekRef={seekRef}
+              onPlayingChange={setPreviewPlaying}
             />
           </CardContent>
         </Card>
@@ -253,14 +352,44 @@ export function VideoEditorPage() {
               onEffect={(e) => setSceneEffect(id, selClip.index, e)}
               onTransition={(t) => setSceneTransition(id, selClip.index, t)}
               onDuration={(d) => setSceneDuration(id, selClip.index, d)}
+              onMotion={(m) => patchScene(id, selClip.index, { motion: m })}
+              onZoom={(z) => patchScene(id, selClip.index, { zoom: z })}
+              onIntensity={(v) => patchScene(id, selClip.index, { intensity: v })}
             />
           )}
 
-          {/* Audio tracks */}
-          <Card>
-            <CardContent className="flex flex-col gap-4 p-5">
-              <h3 className="text-sm font-semibold">Audio</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
+          {/* Elements */}
+          <ElementInspector
+            total={total}
+            selected={selectedElement}
+            onBrowse={() => setElementSheetOpen(true)}
+            onChange={(patch) =>
+              selectedElement && updateElement.mutate({ placementId: selectedElement.id, patch })
+            }
+            onRemove={() => {
+              if (selectedElement) {
+                removeElement.mutate(selectedElement.id);
+                setSelectedElementId(null);
+              }
+            }}
+          />
+
+          {/* Audio settings — opens in a side sheet */}
+          <button
+            type="button"
+            onClick={() => setAudioSheetOpen(true)}
+            className="flex items-center justify-between rounded-xl border border-border bg-card p-4 text-left transition hover:bg-muted"
+          >
+            <span className="text-sm font-semibold">Audio Settings</span>
+            <Settings2 className="size-4 text-muted-foreground" />
+          </button>
+
+          <Sheet open={audioSheetOpen} onOpenChange={setAudioSheetOpen}>
+            <SheetContent className="overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Audio Settings</SheetTitle>
+              </SheetHeader>
+              <div className="grid gap-3 sm:grid-cols-1">
               <div className="flex items-center gap-3 rounded-lg border border-border p-3">
                 <div className="flex size-9 items-center justify-center rounded-md bg-accent/15">
                   <Music className="size-4 text-accent" />
@@ -450,6 +579,8 @@ export function VideoEditorPage() {
                             onDragStart={(e) => {
                               e.dataTransfer.setData('application/x-sound-id', s.id);
                               e.dataTransfer.effectAllowed = 'copy';
+                              // Close the sheet so the sound bar becomes droppable.
+                              setTimeout(() => setAudioSheetOpen(false), 0);
                             }}
                             title="Drag onto the audio track"
                             className="flex cursor-grab items-center justify-between gap-1 rounded-md border border-border px-2 py-1.5 text-xs hover:border-accent/50 active:cursor-grabbing"
@@ -467,82 +598,40 @@ export function VideoEditorPage() {
                   </div>
                 )}
               </div>
-            </CardContent>
-          </Card>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
 
-      {/* Timeline — square cards with transition icons in circles between them */}
-      <Card className="mt-5">
-        <CardContent className="p-5">
-          <h3 className="mb-3 text-sm font-semibold">Timeline</h3>
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/30">
-            {clips.map((c, i) => (
-              <div key={c.index} className="flex items-center gap-2">
-                <button
-                  onClick={() => setSelected(i)}
-                  title={`Scene ${c.index + 1} · ${c.effect}`}
-                  className={cn(
-                    "group relative aspect-square w-[124px] shrink-0 overflow-hidden rounded-lg border transition",
-                    selected === i
-                      ? "border-accent ring-1 ring-accent"
-                      : "border-border hover:opacity-90",
-                  )}
-                >
-                  {c.videoSrc ? (
-                    <video
-                      src={c.videoSrc}
-                      muted
-                      preload="metadata"
-                      className="size-full object-cover"
-                    />
-                  ) : (
-                    <img src={c.thumb} alt="" className="size-full object-cover" />
-                  )}
-                  <span className="absolute left-1.5 top-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                    {c.index + 1}
-                  </span>
-                  {!c.hasAsset && (
-                    <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[9px] text-white/60">
-                      no asset
-                    </span>
-                  )}
-                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/85 to-transparent px-1.5 pb-1 pt-4 text-[9px] text-white">
-                    <span className="truncate">{c.effect}</span>
-                    <span className="shrink-0">
-                      {c.durationSec.toFixed(1)}s
-                    </span>
-                  </div>
-                </button>
-                {i < clips.length - 1 && (
-                  <button
-                    onClick={() => setSelected(i + 1)}
-                    title={`Transition: ${clips[i + 1].transition}`}
-                    className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:border-accent/50 hover:text-accent"
-                  >
-                    <TransitionIcon
-                      name={clips[i + 1].transition}
-                      className="size-4"
-                    />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Sound effects track */}
-          <SoundTrack
-            id={id}
-            total={total}
-            placements={placements}
-            enabled={soundsEnabled}
-            onPlace={(soundId, atSec) => placeSound.mutate({ soundId, atSec })}
-            onMove={(placementId, atSec) => updatePlacement.mutate({ placementId, patch: { atSec } })}
-            onVolume={(placementId, volume) => updatePlacement.mutate({ placementId, patch: { volume } })}
-            onRemove={(placementId) => removePlacement.mutate(placementId)}
-          />
-        </CardContent>
-      </Card>
+      {/* Unified timeline (scenes + element lanes + sound track) */}
+      <Timeline
+        clips={clips}
+        total={total}
+        selectedScene={selected}
+        onSelectScene={setSelected}
+        elements={elements}
+        elementLayers={elementLayers}
+        selectedElementId={selectedElementId}
+        onSelectElement={selectElement}
+        onPlaceElement={(elementId, layer, atSec) => placeElement.mutate({ elementId, layer, atSec })}
+        onMoveElementTime={moveElementTime}
+        onAddElementLayer={() => addElementLayer.mutate()}
+        onRemoveElementLayer={(layer) => removeElementLayer.mutate(layer)}
+        onBrowseElements={() => setElementSheetOpen(true)}
+        placements={placements}
+        soundsEnabled={soundsEnabled}
+        selectedSoundId={selectedSoundId}
+        onSelectSound={selectSound}
+        onPlaceSound={(soundId, atSec) => placeSound.mutate({ soundId, atSec })}
+        onMoveSound={(placementId, atSec) => updatePlacement.mutate({ placementId, patch: { atSec } })}
+        onSoundVolume={(placementId, volume) => updatePlacement.mutate({ placementId, patch: { volume } })}
+        onRemoveSound={(placementId) => removePlacement.mutate(placementId)}
+        timeRef={timeRef}
+        seekRef={seekRef}
+        playing={previewPlaying}
+        zoom={tlZoom}
+        onZoom={setTlZoom}
+      />
 
       {/* Render */}
       <RenderSection
@@ -554,7 +643,10 @@ export function VideoEditorPage() {
             index: c.index,
             effect: c.effect,
             transition: c.transition,
-            durationSec: c.durationSec
+            durationSec: c.durationSec,
+            motion: c.motion,
+            zoom: c.zoom,
+            intensity: c.intensity
           })),
           captionsEnabled,
           preset: editor.timeline.preset,
@@ -693,6 +785,70 @@ export function VideoEditorPage() {
           })()}
         </DialogContent>
       </Dialog>
+
+      {/* Add Elements side sheet */}
+      <Sheet open={elementSheetOpen} onOpenChange={setElementSheetOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Add elements</SheetTitle>
+            <SheetDescription>
+              Drag onto an element lane, or click to drop it at the start of the top lane. Manage your
+              library on the Elements page.
+            </SheetDescription>
+          </SheetHeader>
+          <Input
+            value={elementSearch}
+            onChange={(e) => setElementSearch(e.target.value)}
+            placeholder="Search elements…"
+            className="h-9"
+          />
+          {(() => {
+            const q = elementSearch.trim().toLowerCase();
+            const list = elementLib.filter((el) => !q || el.name.toLowerCase().includes(q));
+            if (list.length === 0) {
+              return (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  {elementLib.length === 0
+                    ? 'No elements yet — upload some on the Elements page.'
+                    : 'No matches.'}
+                </p>
+              );
+            }
+            return (
+              <div className="grid grid-cols-3 gap-2 overflow-y-auto p-0.5">
+                {list.map((el) => (
+                  <button
+                    key={el.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/x-element-id', el.id);
+                      e.dataTransfer.effectAllowed = 'copy';
+                      // Close the sheet so the lanes underneath become a drop
+                      // target — deferred so the native drag fully starts first.
+                      setTimeout(() => setElementSheetOpen(false), 0);
+                    }}
+                    onClick={() => {
+                      placeElement.mutate({ elementId: el.id, layer: Math.max(0, elementLayers - 1), atSec: 0 });
+                      setElementSheetOpen(false);
+                    }}
+                    title={`${el.name} — drag onto a lane or click to add`}
+                    className="group relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/30 p-1.5 hover:border-accent/60"
+                  >
+                    {el.kind === 'video' ? (
+                      <video src={elementUrl(el.file)} muted preload="metadata" className="max-h-full max-w-full object-contain" />
+                    ) : (
+                      <img src={elementUrl(el.file)} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
+                    )}
+                    <span className="absolute left-1 top-1 rounded bg-black/55 px-1 text-[8px] uppercase text-white">
+                      {el.kind}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -702,44 +858,56 @@ function SceneSettings({
   clip,
   onEffect,
   onTransition,
-  onDuration
+  onDuration,
+  onMotion,
+  onZoom,
+  onIntensity
 }: {
   clip: Clip;
   onEffect: (e: string) => void;
   onTransition: (t: Transition) => void;
   onDuration: (d: number) => void;
+  onMotion: (m: string) => void;
+  onZoom: (z: number) => void;
+  onIntensity: (v: number) => void;
 }) {
-  const [zoom, setZoom] = useState(50);
-  const [intensity, setIntensity] = useState(50);
-  const [motion, setMotion] = useState('cinematic');
-
   return (
     <Card>
       <CardContent className="flex flex-col gap-4 p-5">
         <div className="flex items-center gap-2">
-          <Badge variant="accent" className="whitespaces-nowrap">Scene {clip.index + 1}</Badge>
+          <Badge variant="accent" className="whitespace-nowrap">Scene {clip.index + 1}</Badge>
           <p className="line-clamp-1 text-sm text-muted-foreground">{clip.spokenLine}</p>
         </div>
 
-        {/* 2-column grid of controls */}
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/* Top row: three sliders */}
+        <div className="grid gap-4 sm:grid-cols-3">
           <div className="grid gap-1.5">
             <div className="flex items-center justify-between">
               <Label>Duration</Label>
               <span className="text-xs text-muted-foreground">{clip.durationSec.toFixed(1)}s</span>
             </div>
-            <Slider value={clip.durationSec} min={1} max={10} onValueChange={onDuration} />
+            <Slider value={clip.durationSec} min={1} max={15} step={0.5} onValueChange={onDuration} />
           </div>
 
           <div className="grid gap-1.5">
-            <Label>Transition (in)</Label>
-            <Select value={clip.transition} onChange={(e) => onTransition(e.target.value as Transition)}>
-              {TRANSITIONS.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </Select>
+            <div className="flex items-center justify-between">
+              <Label>Zoom level</Label>
+              <span className="text-xs text-muted-foreground">{Math.round(clip.zoom)}%</span>
+            </div>
+            <Slider value={clip.zoom} min={0} max={100} onValueChange={onZoom} />
           </div>
 
+          <div className="grid gap-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Animation intensity</Label>
+              <span className="text-xs text-muted-foreground">{Math.round(clip.intensity)}%</span>
+            </div>
+            <Slider value={clip.intensity} min={0} max={100} onValueChange={onIntensity} />
+          </div>
+        </div>
+
+        {/* Bottom row: three dropdowns */}
+        <div className="grid gap-4 sm:grid-cols-3">
           <div className="grid gap-1.5">
             <Label>Effect</Label>
             <Select value={clip.effect} onChange={(e) => onEffect(e.target.value)}>
@@ -751,7 +919,7 @@ function SceneSettings({
 
           <div className="grid gap-1.5">
             <Label>Motion style</Label>
-            <Select value={motion} onChange={(e) => setMotion(e.target.value)}>
+            <Select value={clip.motion} onChange={(e) => onMotion(e.target.value)}>
               <option value="subtle">Subtle</option>
               <option value="cinematic">Cinematic</option>
               <option value="energetic">Energetic</option>
@@ -759,43 +927,73 @@ function SceneSettings({
           </div>
 
           <div className="grid gap-1.5">
-            <div className="flex items-center justify-between">
-              <Label>Zoom level</Label>
-              <span className="text-xs text-muted-foreground">{zoom}%</span>
-            </div>
-            <Slider value={zoom} min={0} max={100} onValueChange={setZoom} />
-          </div>
-
-          <div className="grid gap-1.5">
-            <div className="flex items-center justify-between">
-              <Label>Animation intensity</Label>
-              <span className="text-xs text-muted-foreground">{intensity}%</span>
-            </div>
-            <Slider value={intensity} min={0} max={100} onValueChange={setIntensity} />
+            <Label>Transition (in)</Label>
+            <Select value={clip.transition} onChange={(e) => onTransition(e.target.value as Transition)}>
+              {TRANSITIONS.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </Select>
           </div>
         </div>
-
-        <p className="text-[11px] text-muted-foreground">
-          Zoom / motion / intensity are previews for now and apply at render time in a later round.
-        </p>
       </CardContent>
     </Card>
   );
 }
 
 // ── Live preview (mock player) ────────────────────────────────────────────────
-function effectTransform(effect: string, p: number): { transform: string; filter?: string } {
+type MotionOpts = { zoom: number; intensity: number; motion: string };
+
+function effectTransform(
+  effect: string,
+  p: number,
+  opts: MotionOpts = { zoom: 50, intensity: 50, motion: 'cinematic' }
+): { transform: string; filter?: string } {
   const e = effect.toLowerCase();
-  if (e.includes('zoom out')) return { transform: `scale(${1.12 - 0.12 * p})` };
-  if (e.includes('zoom') || e.includes('focus')) return { transform: `scale(${1.0 + 0.12 * p})` };
-  if (e.includes('pan left')) return { transform: `scale(1.12) translateX(${-4 * p}%)` };
-  if (e.includes('pan right')) return { transform: `scale(1.12) translateX(${4 * p}%)` };
-  if (e.includes('ken burns')) return { transform: `scale(${1.05 + 0.13 * p}) translate(${-2 * p}%, ${-2 * p}%)` };
-  if (e.includes('parallax')) return { transform: `scale(${1.08 + 0.06 * p}) translateY(${-3 * p}%)` };
-  if (e.includes('rotate')) return { transform: `scale(1.1) rotate(${(p - 0.5) * 3}deg)` };
-  if (e.includes('motion blur')) return { transform: 'scale(1.08)', filter: 'blur(1px)' };
-  if (e.includes('crop')) return { transform: 'scale(1.06)' };
-  return { transform: `scale(${1.04 + 0.06 * p})` };
+  // Mirror the renderer's scaling so the preview tracks the Scene-settings sliders
+  // (50% = the previous defaults).
+  const motionMul = opts.motion === 'subtle' ? 0.6 : opts.motion === 'energetic' ? 1.6 : 1.0;
+  const zd = 0.12 * (opts.zoom / 50) * motionMul; // zoom delta
+  const pan = 4 * (opts.intensity / 50) * motionMul; // % pan
+  const cover = 1.04 + (pan * 2) / 100;
+  if (e.includes('zoom out')) return { transform: `scale(${1.02 + zd * (1 - p)})` };
+  if (e.includes('zoom') || e.includes('focus')) return { transform: `scale(${1.02 + zd * p})` };
+  if (e.includes('pan left')) return { transform: `scale(${cover}) translateX(${pan * (1 - 2 * p)}%)` };
+  if (e.includes('pan right')) return { transform: `scale(${cover}) translateX(${-pan * (1 - 2 * p)}%)` };
+  if (e.includes('ken burns'))
+    return { transform: `scale(${1.04 + zd * p}) translate(${pan * 0.3 * (1 - 2 * p)}%, ${pan * 0.3 * (1 - 2 * p)}%)` };
+  if (e.includes('parallax'))
+    return { transform: `scale(${1.04 + zd * 0.6 * p}) translateY(${pan * 0.6 * (1 - 2 * p)}%)` };
+  if (e.includes('rotate')) return { transform: `scale(${cover}) rotate(${(p - 0.5) * 3 * (pan / 4)}deg)` };
+  if (e.includes('motion blur')) return { transform: `scale(${1.02 + zd * p})`, filter: 'blur(1px)' };
+  if (e.includes('crop')) return { transform: `scale(${1.02 + zd * p})` };
+  return { transform: `scale(${1.02 + zd * p})` };
+}
+
+// Element entrance/idle animation for the PREVIEW, in seconds-since-start.
+// Mirrors remotion/components/Elements.jsx (which works in frames) so the
+// preview matches the render.
+function elementPreviewAnim(animation: string, localSec: number): { extra: string; opacity: number } {
+  const lt = Math.max(0, localSec);
+  const IN = 0.4;
+  switch (animation) {
+    case 'fade':
+      return { extra: '', opacity: Math.min(1, lt / IN) };
+    case 'pop': {
+      const x = Math.min(1, lt / 0.45);
+      const c1 = 1.70158;
+      const c3 = c1 + 1; // easeOutBack ≈ the spring's overshoot
+      const e = 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+      return { extra: ` scale(${0.6 + 0.4 * e})`, opacity: 1 };
+    }
+    case 'pulse':
+      return { extra: ` scale(${1 + 0.06 * Math.sin(lt * Math.PI * 2 * 1.5)})`, opacity: 1 };
+    case 'slide': {
+      const x = Math.min(1, lt / IN);
+      return { extra: ` translateX(${-8 * (1 - x)}%)`, opacity: x };
+    }
+    default:
+      return { extra: '', opacity: 1 };
+  }
 }
 
 // Split a caption line into evenly-timed words — mirrors the render's caption
@@ -818,8 +1016,15 @@ function EditorPreview({
   musicVolume = 0.3,
   placements = [],
   soundsEnabled = true,
+  elements = [],
+  selectedElementId = null,
+  onSelectElement,
+  onElementMove,
   projectId,
-  onScrubToScene
+  onScrubToScene,
+  timeRef,
+  seekRef,
+  onPlayingChange
 }: {
   clips: Clip[];
   total: number;
@@ -831,8 +1036,15 @@ function EditorPreview({
   musicVolume?: number;
   placements?: { id: string; file: string; atSec: number; volume: number }[];
   soundsEnabled?: boolean;
+  elements?: ElementPlacement[];
+  selectedElementId?: string | null;
+  onSelectElement?: (id: string | null) => void;
+  onElementMove?: (id: string, x: number, y: number) => void;
   projectId: string;
   onScrubToScene: (i: number) => void;
+  timeRef?: React.MutableRefObject<number>;
+  seekRef?: React.MutableRefObject<(s: number) => void>;
+  onPlayingChange?: (playing: boolean) => void;
 }) {
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -888,6 +1100,27 @@ function EditorPreview({
     if (mu) mu.currentTime = mu.duration ? t % mu.duration : 0;
   };
 
+  // Seek the transport (used by the scrub bar AND the timeline playhead).
+  const seek = (t: number) => {
+    const clamped = Math.max(0, Math.min(total, t));
+    setTime(clamped);
+    syncAudio(clamped);
+    const c = clips.find((x) => clamped >= x.start && clamped < x.start + x.durationSec);
+    if (c) onScrubToScene(clips.indexOf(c));
+  };
+
+  // Expose the clock to the timeline: mirror time into a ref (read each frame by
+  // the playhead) and publish seek + playing.
+  useEffect(() => {
+    if (timeRef) timeRef.current = time;
+  }, [time, timeRef]);
+  useEffect(() => {
+    if (seekRef) seekRef.current = seek;
+  });
+  useEffect(() => {
+    onPlayingChange?.(playing);
+  }, [playing, onPlayingChange]);
+
   // Start/stop audio with the transport.
   useEffect(() => {
     const n = narrRef.current;
@@ -917,9 +1150,19 @@ function EditorPreview({
       setTime((t) => {
         const next = t + dt;
         if (next >= total) {
-          // Loop: restart the audio tracks too.
-          if (narrRef.current) narrRef.current.currentTime = 0;
-          if (musicRef.current) musicRef.current.currentTime = 0;
+          // Loop: rewind AND replay the audio (it may have ended/paused, in
+          // which case rewinding alone won't resume it).
+          const n = narrRef.current;
+          const mu = musicRef.current;
+          if (n) {
+            n.currentTime = 0;
+            n.play().catch(() => {});
+          }
+          if (mu) {
+            mu.currentTime = 0;
+            mu.play().catch(() => {});
+          }
+          lastT.current = 0; // so placed sound effects fire again next loop
           return 0;
         }
         return next;
@@ -935,7 +1178,13 @@ function EditorPreview({
   // Which clip is active at `time`.
   const active = clips.find((c) => time >= c.start && time < c.start + c.durationSec) ?? clips[0];
   const p = active ? Math.min(1, (time - active.start) / Math.max(0.001, active.durationSec)) : 0;
-  const fx = active ? effectTransform(active.effect, p) : { transform: 'none' };
+  const fx = active
+    ? effectTransform(active.effect, p, {
+        zoom: active.zoom,
+        intensity: active.intensity,
+        motion: active.motion
+      })
+    : { transform: 'none' };
   // Brief transition fade at the start of each clip.
   const fadeT = active ? Math.min(1, (time - active.start) / 0.4) : 1;
 
@@ -983,6 +1232,38 @@ function EditorPreview({
   const line = captionLines.find((l) => time >= l.start && time < l.end);
   const scale = frameW / 1080;
 
+  // Drag a selected element on the preview to set its x/y (center %).
+  const [elDrag, setElDrag] = useState<{ id: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!elDrag) return;
+    const move = (e: PointerEvent) => {
+      const el = frameRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const x = Math.max(0, Math.min(100, ((e.clientX - r.left) / r.width) * 100));
+      const y = Math.max(0, Math.min(100, ((e.clientY - r.top) / r.height) * 100));
+      setElDrag((d) => (d ? { ...d, x, y } : d));
+    };
+    const up = () => {
+      setElDrag((d) => {
+        if (d) onElementMove?.(d.id, Math.round(d.x * 10) / 10, Math.round(d.y * 10) / 10);
+        return null;
+      });
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elDrag?.id]);
+
+  const visibleElements = elements
+    .filter((el) => time >= el.startSec && time < el.endSec)
+    .slice()
+    .sort((a, b) => a.layer - b.layer);
+
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -1011,6 +1292,46 @@ function EditorPreview({
                 style={{ transform: fx.transform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
               />
             ))}
+          {/* Element overlays (below captions). Selected one is draggable. */}
+          {visibleElements.map((el) => {
+            const pos = elDrag && elDrag.id === el.id ? elDrag : { x: el.x, y: el.y };
+            const selected = el.id === selectedElementId;
+            const src = `/media/${projectId}/${el.file}`;
+            // No entrance animation while actively dragging this element, so
+            // positioning stays steady; otherwise mirror the render.
+            const anim =
+              elDrag && elDrag.id === el.id
+                ? { extra: '', opacity: 1 }
+                : elementPreviewAnim(el.animation, time - el.startSec);
+            return (
+              <div
+                key={el.id}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSelectElement?.(el.id);
+                  setElDrag({ id: el.id, x: pos.x, y: pos.y });
+                }}
+                style={{
+                  position: 'absolute',
+                  left: `${pos.x}%`,
+                  top: `${pos.y}%`,
+                  width: `${el.size}%`,
+                  transform: `translate(-50%, -50%) rotate(${el.rotation || 0}deg)${anim.extra}`,
+                  opacity: anim.opacity,
+                  cursor: 'move',
+                  outline: selected ? '2px solid hsl(var(--accent))' : 'none',
+                  outlineOffset: 2
+                }}
+              >
+                {el.kind === 'video' ? (
+                  <video src={src} muted loop autoPlay playsInline className="block w-full" />
+                ) : (
+                  <img src={src} alt="" className="pointer-events-none block w-full" />
+                )}
+              </div>
+            );
+          })}
           {captionsEnabled && line && captionSettings && (() => {
             const words = captionWords(line);
             const activeIdx = words.findIndex((w) => time >= w.start && time < w.end);
@@ -1073,11 +1394,7 @@ function EditorPreview({
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-            const t = frac * total;
-            setTime(t);
-            syncAudio(t);
-            const c = clips.find((x) => t >= x.start && t < x.start + x.durationSec);
-            if (c) onScrubToScene(clips.indexOf(c));
+            seek(frac * total);
           }}
         >
           <div className="h-full rounded-full bg-accent" style={{ width: `${(time / Math.max(0.001, total)) * 100}%` }} />
@@ -1112,7 +1429,15 @@ function EditorPreview({
 
 // ── Render section (real Remotion render via background job) ───────────────────
 type RenderPayload = {
-  scenes: { index: number; effect: string; transition: string; durationSec: number }[];
+  scenes: {
+    index: number;
+    effect: string;
+    transition: string;
+    durationSec: number;
+    motion: string;
+    zoom: number;
+    intensity: number;
+  }[];
   captionsEnabled: boolean;
   preset: string | null;
   music: { enabled: boolean; volume: number; fadeIn: boolean; fadeOut: boolean };
@@ -1285,45 +1610,166 @@ function RenderCard({
   );
 }
 
-// ── Sound effects track (below the timeline) ──────────────────────────────────
-function SoundTrack({
-  id: _id,
-  total,
-  placements,
-  enabled,
-  onPlace,
-  onMove,
-  onVolume,
-  onRemove
-}: {
-  id: string;
-  total: number;
-  placements: SoundPlacement[];
-  enabled: boolean;
-  onPlace: (soundId: string, atSec: number) => void;
-  onMove: (placementId: string, atSec: number) => void;
-  onVolume: (placementId: string, volume: number) => void;
-  onRemove: (placementId: string) => void;
-}) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [dragPid, setDragPid] = useState<string | null>(null);
-  const [dragAt, setDragAt] = useState(0);
+// ── Unified timeline (scenes + element lanes + sound track) ───────────────────
+const TL_RULER_H = 22;
+const TL_ELEM_LANE_H = 30;
+const TL_SCENE_H = 64;
+const TL_SOUND_H = 40;
+const TL_TRACK_GAP = 8;
+const TL_GUTTER_W = 36;
 
-  const xToSec = (clientX: number) => {
-    const el = trackRef.current;
-    if (!el || total <= 0) return 0;
-    const r = el.getBoundingClientRect();
-    return Math.max(0, Math.min(total, ((clientX - r.left) / r.width) * total));
-  };
+function pickTickStep(pxPerSec: number): number {
+  for (const s of [1, 2, 5, 10, 15, 30, 60, 120, 300, 600]) if (s * pxPerSec >= 48) return s;
+  return 1200;
+}
+
+function Timeline({
+  clips,
+  total,
+  selectedScene,
+  onSelectScene,
+  elements,
+  elementLayers,
+  selectedElementId,
+  onSelectElement,
+  onPlaceElement,
+  onMoveElementTime,
+  onAddElementLayer,
+  onRemoveElementLayer,
+  onBrowseElements,
+  placements,
+  soundsEnabled,
+  selectedSoundId,
+  onSelectSound,
+  onPlaceSound,
+  onMoveSound,
+  onSoundVolume,
+  onRemoveSound,
+  timeRef,
+  seekRef,
+  playing,
+  zoom,
+  onZoom
+}: {
+  clips: Clip[];
+  total: number;
+  selectedScene: number;
+  onSelectScene: (i: number) => void;
+  elements: ElementPlacement[];
+  elementLayers: number;
+  selectedElementId: string | null;
+  onSelectElement: (id: string | null) => void;
+  onPlaceElement: (elementId: string, layer: number, atSec: number) => void;
+  onMoveElementTime: (placementId: string, atSec: number) => void;
+  onAddElementLayer: () => void;
+  onRemoveElementLayer: (layer: number) => void;
+  onBrowseElements: () => void;
+  placements: SoundPlacement[];
+  soundsEnabled: boolean;
+  selectedSoundId: string | null;
+  onSelectSound: (id: string | null) => void;
+  onPlaceSound: (soundId: string, atSec: number) => void;
+  onMoveSound: (placementId: string, atSec: number) => void;
+  onSoundVolume: (placementId: string, volume: number) => void;
+  onRemoveSound: (placementId: string) => void;
+  timeRef: React.MutableRefObject<number>;
+  seekRef: React.MutableRefObject<(s: number) => void>;
+  playing: boolean;
+  zoom: number;
+  onZoom: (z: number) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
+  const [laneW, setLaneW] = useState(640);
 
   useEffect(() => {
-    if (!dragPid) return;
-    const move = (e: PointerEvent) => setDragAt(xToSec(e.clientX));
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((ents) => setLaneW(ents[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Small horizontal inset so the t=0 tick label + playhead head aren't clipped
+  // at the left edge.
+  const PAD_X = 8;
+  const fitPps = total > 0 ? Math.max(1, laneW - PAD_X * 2) / total : 1;
+  const pxPerSec = Math.max(fitPps, fitPps * zoom); // zoom 1 = fit, >1 = zoom in
+  const contentW = Math.max(laneW, total * pxPerSec + PAD_X * 2);
+  const secToX = (s: number) => PAD_X + s * pxPerSec; // position (includes inset)
+  const secToW = (s: number) => s * pxPerSec; // width (no inset)
+  const xToSec = (clientX: number) => {
+    const el = contentRef.current;
+    if (!el || total <= 0) return 0;
+    const r = el.getBoundingClientRect();
+    return Math.max(0, Math.min(total, (clientX - r.left - PAD_X) / pxPerSec));
+  };
+
+  // Imperative playhead — follows the shared clock without re-rendering, and
+  // auto-scrolls to stay in view during playback.
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const x = secToX(timeRef?.current ?? 0);
+      const ph = playheadRef.current;
+      if (ph) ph.style.transform = `translateX(${x}px)`;
+      const sc = scrollRef.current;
+      if (sc && playing) {
+        if (x < sc.scrollLeft + 24 || x > sc.scrollLeft + sc.clientWidth - 24) {
+          sc.scrollLeft = Math.max(0, x - sc.clientWidth / 2);
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pxPerSec, playing]);
+
+  const seek = (clientX: number) => seekRef?.current?.(xToSec(clientX));
+
+  // Playhead / ruler scrubbing.
+  const [scrubbing, setScrubbing] = useState(false);
+  useEffect(() => {
+    if (!scrubbing) return;
+    const move = (e: PointerEvent) => seek(e.clientX);
+    const up = () => setScrubbing(false);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrubbing, pxPerSec]);
+
+  // Block time-drag (elements + sounds) with click-vs-drag detection.
+  const [drag, setDrag] = useState<{ kind: 'element' | 'sound'; id: string } | null>(null);
+  const [dragAt, setDragAt] = useState(0);
+  const movedRef = useRef(false);
+  const selElRef = useRef(selectedElementId);
+  selElRef.current = selectedElementId;
+  useEffect(() => {
+    if (!drag) return;
+    const move = (e: PointerEvent) => {
+      movedRef.current = true;
+      setDragAt(xToSec(e.clientX));
+    };
     const up = (e: PointerEvent) => {
-      onMove(dragPid, xToSec(e.clientX));
-      setDragPid(null);
+      const at = xToSec(e.clientX);
+      if (drag.kind === 'element') {
+        if (movedRef.current) {
+          onMoveElementTime(drag.id, at);
+          onSelectElement(drag.id);
+        } else {
+          onSelectElement(selElRef.current === drag.id ? null : drag.id);
+        }
+      } else {
+        if (movedRef.current) onMoveSound(drag.id, at);
+        onSelectSound(drag.id);
+      }
+      setDrag(null);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -1332,135 +1778,498 @@ function SoundTrack({
       window.removeEventListener('pointerup', up);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragPid, total]);
+  }, [drag, pxPerSec]);
 
-  const sel = placements.find((p) => p.id === selected) ?? null;
-
-  // One tick per whole second; labels at multiples of 5.
+  const step = pickTickStep(pxPerSec);
   const ticks: number[] = [];
-  for (let s = 0; s <= Math.floor(total); s++) ticks.push(s);
+  for (let s = 0; s <= Math.ceil(total); s += step) ticks.push(s);
+  const grid = ticks.map((s) => (
+    <div key={s} className="pointer-events-none absolute bottom-0 top-0 w-px bg-border/25" style={{ left: secToX(s) }} />
+  ));
+  const laneOrder = Array.from({ length: elementLayers }, (_, i) => elementLayers - 1 - i);
+  const elemTrackH = elementLayers * TL_ELEM_LANE_H + (elementLayers - 1) * 4;
+  const selSound = placements.find((p) => p.id === selectedSoundId) ?? null;
 
   return (
-    <div className={cn('mt-4', !enabled && 'opacity-50')}>
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">
-        Sound effects track{!enabled && ' (disabled)'}
-      </span>
-      <div
-        ref={trackRef}
-        onDragOver={(e) => {
-          if (e.dataTransfer.types.includes('application/x-sound-id')) {
-            e.preventDefault();
-            setDragOver(true);
-          }
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          const sid = e.dataTransfer.getData('application/x-sound-id');
-          if (sid) onPlace(sid, xToSec(e.clientX));
-        }}
-        className={cn(
-          'relative h-14 w-full overflow-hidden rounded-lg border border-dashed',
-          dragOver ? 'border-accent bg-accent/10' : 'border-border bg-muted/30'
-        )}
-      >
-        {/* 5-second gridlines, behind the blocks */}
-        <div className="pointer-events-none absolute inset-0">
-          {ticks
-            .filter((s) => s > 0 && s % 5 === 0)
-            .map((s) => (
-              <div
-                key={s}
-                className="absolute bottom-0 top-0 w-px bg-border/40"
-                style={{ left: `${total > 0 ? (s / total) * 100 : 0}%` }}
+    <Card className="mt-5">
+      <CardContent className="p-5">
+        {/* Header: title + element controls + zoom */}
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <h3 className="text-sm font-semibold">Timeline</h3>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-7" onClick={onBrowseElements}>
+              <Shapes className="size-3.5" /> Add element
+            </Button>
+            <Button variant="ghost" size="sm" className="h-7" onClick={onAddElementLayer} title="Add an element layer">
+              <Layers className="size-3.5" /> Layer
+            </Button>
+            <div className="flex items-center gap-1.5 border-l border-border pl-3">
+              <ZoomOut className="size-4 text-muted-foreground" />
+              <input
+                type="range"
+                min={1}
+                max={10}
+                step={0.1}
+                value={zoom}
+                onChange={(e) => onZoom(Number(e.target.value))}
+                title="Zoom timeline"
+                className="h-1.5 w-28 cursor-pointer accent-accent"
               />
-            ))}
+              <ZoomIn className="size-4 text-muted-foreground" />
+            </div>
+          </div>
         </div>
-        {placements.length === 0 && !dragOver && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground">
-            Drag a sound here to place it on the video
+
+        <div className="flex gap-2">
+          {/* Left icon gutter (aligned to track heights) */}
+          <div className="shrink-0" style={{ width: TL_GUTTER_W }}>
+            <div style={{ height: TL_RULER_H }} />
+            <div
+              style={{ height: elemTrackH, marginTop: TL_TRACK_GAP }}
+              className="flex items-center justify-center rounded-md bg-sky-500/10 text-sky-400"
+              title="Elements"
+            >
+              <Shapes className="size-4" />
+            </div>
+            <div
+              style={{ height: TL_SCENE_H, marginTop: TL_TRACK_GAP }}
+              className="flex items-center justify-center rounded-md bg-accent/10 text-accent"
+              title="Scenes"
+            >
+              <Clapperboard className="size-4" />
+            </div>
+            <div
+              style={{ height: TL_SOUND_H, marginTop: TL_TRACK_GAP }}
+              className="flex items-center justify-center rounded-md bg-emerald-500/10 text-emerald-400"
+              title="Sound effects"
+            >
+              <Music className="size-4" />
+            </div>
+          </div>
+
+          {/* Scrollable lane area (shared time axis) */}
+          <div
+            ref={scrollRef}
+            className="relative flex-1 overflow-x-auto overflow-y-hidden pb-1 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/30"
+          >
+            <div ref={contentRef} className="relative" style={{ width: contentW }}>
+              {/* Ruler (click/drag to scrub) */}
+              <div
+                className="relative cursor-pointer"
+                style={{ height: TL_RULER_H }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setScrubbing(true);
+                  seek(e.clientX);
+                }}
+              >
+                {ticks.map((s) => (
+                  <div
+                    key={s}
+                    className="absolute top-0 flex flex-col items-center"
+                    style={{ left: secToX(s), transform: 'translateX(-50%)' }}
+                  >
+                    <div className="h-1.5 w-px bg-border" />
+                    <span className="mt-0.5 text-[9px] leading-none tabular-nums text-muted-foreground">{s}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Element lanes */}
+              <div className="flex flex-col gap-1" style={{ marginTop: TL_TRACK_GAP }}>
+                {laneOrder.map((layer) => {
+                  const laneEls = elements.filter((e) => e.layer === layer);
+                  const empty = laneEls.length === 0;
+                  return (
+                    <div
+                      key={layer}
+                      onDragOver={(e) => {
+                        if (e.dataTransfer.types.includes('application/x-element-id')) e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const eid = e.dataTransfer.getData('application/x-element-id');
+                        if (eid) onPlaceElement(eid, layer, xToSec(e.clientX));
+                      }}
+                      className="relative overflow-hidden rounded-md border border-dashed border-border/60 bg-muted/20"
+                      style={{ height: TL_ELEM_LANE_H }}
+                    >
+                      {grid}
+                      <span className="pointer-events-none absolute left-1 top-0.5 z-10 text-[8px] font-medium text-muted-foreground">
+                        L{layer + 1}
+                      </span>
+                      {empty && elementLayers > 1 && (
+                        <button
+                          onClick={() => onRemoveElementLayer(layer)}
+                          title="Remove this empty layer"
+                          className="absolute right-1 top-0.5 z-10 rounded text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      )}
+                      {laneEls.map((el) => {
+                        const start = drag?.kind === 'element' && drag.id === el.id ? dragAt : el.startSec;
+                        const dur = Math.max(0.3, el.endSec - el.startSec);
+                        return (
+                          <div
+                            key={el.id}
+                            onPointerDown={(e) => {
+                              e.preventDefault();
+                              movedRef.current = false;
+                              setDrag({ kind: 'element', id: el.id });
+                              setDragAt(el.startSec);
+                            }}
+                            title={`${el.name} · ${start.toFixed(1)}–${(start + dur).toFixed(1)}s`}
+                            style={{ left: secToX(start), width: Math.max(10, secToW(dur)) }}
+                            className={cn(
+                              'absolute bottom-0.5 top-0.5 z-[5] flex cursor-grab items-center gap-1 overflow-hidden rounded border px-1 text-[9px] active:cursor-grabbing',
+                              selectedElementId === el.id
+                                ? 'border-sky-400 bg-sky-500/30 ring-1 ring-sky-400'
+                                : 'border-sky-500/40 bg-sky-500/15'
+                            )}
+                          >
+                            <Shapes className="size-2.5 shrink-0 text-sky-300" />
+                            <span className="truncate text-sky-50">{el.name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Scenes track (proportional, gray outline → red when selected) */}
+              <div
+                className="relative overflow-hidden rounded-md border border-border bg-muted/20"
+                style={{ height: TL_SCENE_H, marginTop: TL_TRACK_GAP }}
+              >
+                {clips.map((c, i) => {
+                  const left = secToX(c.start);
+                  const w = Math.max(18, secToW(c.durationSec));
+                  return (
+                    <button
+                      key={c.index}
+                      onClick={() => onSelectScene(i)}
+                      title={`Scene ${c.index + 1} · ${c.effect} · ${c.durationSec.toFixed(1)}s`}
+                      style={{ left, width: w }}
+                      className={cn(
+                        'group absolute bottom-1 top-1 overflow-hidden rounded-md border-2 text-left transition',
+                        selectedScene === i
+                          ? 'z-10 border-accent ring-1 ring-accent'
+                          : 'border-border/70 hover:border-border'
+                      )}
+                    >
+                      {c.videoSrc ? (
+                        <video src={c.videoSrc} muted preload="metadata" className="absolute inset-0 size-full object-cover opacity-70" />
+                      ) : (
+                        <img src={c.thumb} alt="" className="absolute inset-0 size-full object-cover opacity-70" />
+                      )}
+                      <span className="absolute left-1 top-1 rounded bg-black/65 px-1 text-[9px] font-bold text-white">{c.index + 1}</span>
+                      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/85 to-transparent px-1 pb-0.5 pt-3 text-[8px] text-white">
+                        <span className="truncate">{c.spokenLine || c.effect}</span>
+                        <span className="shrink-0">{c.durationSec.toFixed(1)}s</span>
+                      </div>
+                    </button>
+                  );
+                })}
+                {/* Transition icons at scene boundaries */}
+                {clips.slice(1).map((c, idx) => {
+                  const i = idx + 1;
+                  return (
+                    <button
+                      key={`t-${c.index}`}
+                      onClick={() => onSelectScene(i)}
+                      title={`Transition: ${c.transition}`}
+                      style={{ left: secToX(c.start), top: '50%', transform: 'translate(-50%, -50%)' }}
+                      className="absolute z-20 flex size-6 items-center justify-center rounded-full border border-amber-500/70 bg-card text-amber-500 hover:bg-amber-500/10"
+                    >
+                      <TransitionIcon name={c.transition} className="size-3.5" />
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Sound track */}
+              <div
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes('application/x-sound-id')) e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const sid = e.dataTransfer.getData('application/x-sound-id');
+                  if (sid) onPlaceSound(sid, xToSec(e.clientX));
+                }}
+                className={cn(
+                  'relative overflow-hidden rounded-md border border-dashed border-border/60 bg-muted/20',
+                  !soundsEnabled && 'opacity-50'
+                )}
+                style={{ height: TL_SOUND_H, marginTop: TL_TRACK_GAP }}
+              >
+                {grid}
+                {placements.length === 0 && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground">
+                    Drag a sound here
+                  </div>
+                )}
+                {placements.map((p) => {
+                  const at = drag?.kind === 'sound' && drag.id === p.id ? dragAt : p.atSec;
+                  const w = Math.max(10, secToW(Math.max(0.3, p.durationSec)));
+                  return (
+                    <div
+                      key={p.id}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        movedRef.current = false;
+                        setDrag({ kind: 'sound', id: p.id });
+                        setDragAt(p.atSec);
+                      }}
+                      title={`${p.name} @ ${at.toFixed(1)}s`}
+                      style={{ left: secToX(at), width: w }}
+                      className={cn(
+                        'absolute bottom-1 top-1 z-[5] flex cursor-grab items-center gap-1 overflow-hidden rounded border px-1 text-[9px] active:cursor-grabbing',
+                        selectedSoundId === p.id
+                          ? 'border-emerald-400 bg-emerald-500/30 ring-1 ring-emerald-400'
+                          : 'border-emerald-500/40 bg-emerald-500/15'
+                      )}
+                    >
+                      <Music className="size-2.5 shrink-0 text-emerald-300" />
+                      <span className="truncate text-emerald-50">{p.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Playhead (spans all tracks; draggable handle) */}
+              <div ref={playheadRef} className="pointer-events-none absolute left-0 top-0 z-30 h-full w-px bg-accent">
+                <div
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setScrubbing(true);
+                  }}
+                  className="pointer-events-auto absolute -left-[7px] top-0 size-3.5 cursor-ew-resize rounded-full border-2 border-accent bg-background"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Selected sound inspector */}
+        {selSound && (
+          <div className="mt-3 flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs">
+            <Music className="size-4 shrink-0 text-emerald-400" />
+            <span className="truncate font-medium">{selSound.name}</span>
+            <span className="shrink-0 text-muted-foreground">@ {selSound.atSec.toFixed(1)}s</span>
+            <div className="ml-2 flex items-center gap-2">
+              <span className="text-muted-foreground">Vol</span>
+              <Slider
+                value={Math.round((selSound.volume ?? 1) * 100)}
+                min={0}
+                max={100}
+                onValueChange={(v) => onSoundVolume(selSound.id, v / 100)}
+                className="w-28"
+              />
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto size-7 text-destructive"
+              onClick={() => {
+                onRemoveSound(selSound.id);
+                onSelectSound(null);
+              }}
+            >
+              <Trash2 className="size-4" />
+            </Button>
           </div>
         )}
-        {placements.map((p) => {
-          const at = dragPid === p.id ? dragAt : p.atSec;
-          const left = total > 0 ? (at / total) * 100 : 0;
-          const width = total > 0 ? Math.max(4, (Math.max(0.3, p.durationSec) / total) * 100) : 8;
-          return (
-            <div
-              key={p.id}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                setSelected(p.id);
-                setDragPid(p.id);
-                setDragAt(p.atSec);
-              }}
-              title={`${p.name} @ ${at.toFixed(1)}s`}
-              style={{ left: `${left}%`, width: `${width}%` }}
-              className={cn(
-                'absolute bottom-1.5 top-1.5 flex cursor-grab items-center gap-1 overflow-hidden rounded-md border px-1.5 text-[10px] active:cursor-grabbing',
-                selected === p.id
-                  ? 'border-accent bg-accent/25 ring-1 ring-accent'
-                  : 'border-accent/40 bg-accent/15'
-              )}
-            >
-              <Music className="size-3 shrink-0 text-accent" />
-              <span className="truncate">{p.name}</span>
-            </div>
-          );
-        })}
-      </div>
-      {/* Per-second ruler; numbered every 5s */}
-      {total > 0 && (
-        <div className="relative mt-1 h-5 w-full select-none">
-          {ticks.map((s) => {
-            const left = (s / total) * 100;
-            const major = s % 5 === 0;
-            return (
-              <div
-                key={s}
-                className="absolute top-0 flex flex-col items-center"
-                style={{ left: `${left}%`, transform: 'translateX(-50%)' }}
-              >
-                <div className={cn('w-px bg-border', major ? 'h-2' : 'h-1')} />
-                {major && (
-                  <span className="mt-0.5 text-[9px] leading-none tabular-nums text-muted-foreground">
-                    {s}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Selected-element inspector (right panel) ───────────────────────────────────
+// Module-level so they aren't redefined each render (an inline component would
+// remount its subtree on every keystroke, dropping focus mid-edit).
+function parseNum(v: string, fallback: number) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+// A labelled row: left label + controls, with a hairline divider above.
+function SettingRow({
+  label,
+  first,
+  children
+}: {
+  label: string;
+  first?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 px-3.5 py-2.5',
+        !first && 'border-t border-border/60'
       )}
-      {sel && (
-        <div className="mt-2 flex items-center gap-3 rounded-lg border border-border p-2 text-xs">
-          <Music className="size-4 shrink-0 text-accent" />
-          <span className="truncate font-medium">{sel.name}</span>
-          <span className="shrink-0 text-muted-foreground">@ {sel.atSec.toFixed(1)}s</span>
-          <div className="ml-2 flex items-center gap-2">
-            <span className="text-muted-foreground">Vol</span>
-            <Slider
-              value={Math.round((sel.volume ?? 1) * 100)}
-              min={0}
-              max={100}
-              onValueChange={(v) => onVolume(sel.id, v / 100)}
-              className="w-28"
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto size-7 text-destructive"
-            onClick={() => {
-              onRemove(sel.id);
-              setSelected(null);
-            }}
-          >
-            <Trash2 className="size-4" />
+    >
+      <span className="w-[68px] shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-2">{children}</div>
+    </div>
+  );
+}
+
+// Compact numeric field with an inline label; commits on blur / Enter so typing
+// is smooth (no per-keystroke mutation) and the cursor never jumps.
+function NumField({
+  label,
+  value,
+  onCommit,
+  step = 1,
+  suffix,
+  disabled
+}: {
+  label: string;
+  value: number;
+  onCommit: (v: number) => void;
+  step?: number;
+  suffix?: string;
+  disabled?: boolean;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const display = draft ?? String(Math.round(value * 10) / 10);
+  const commit = () => {
+    if (draft !== null) {
+      onCommit(parseNum(draft, value));
+      setDraft(null);
+    }
+  };
+  return (
+    <label className={cn('flex items-center gap-1.5 text-sm', disabled && 'opacity-50')}>
+      <span className="text-muted-foreground">{label}</span>
+      <span className="inline-flex items-center">
+        <input
+          type="number"
+          step={step}
+          disabled={disabled}
+          value={display}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          }}
+          className="h-8 w-16 rounded-md border border-input bg-background px-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        {suffix && <span className="ml-1 text-xs text-muted-foreground">{suffix}</span>}
+      </span>
+    </label>
+  );
+}
+
+function ElementInspector({
+  total,
+  selected,
+  onBrowse,
+  onChange,
+  onRemove
+}: {
+  total: number;
+  selected: ElementPlacement | null;
+  onBrowse: () => void;
+  onChange: (patch: Partial<ElementPlacement>) => void;
+  onRemove: () => void;
+}) {
+  const wholeVideo = !!selected && selected.startSec <= 0.05 && selected.endSec >= total - 0.05;
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3 p-5">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold">Element settings</span>
+          <Button variant="outline" size="sm" onClick={onBrowse}>
+            <Plus className="size-4" /> Add element
           </Button>
         </div>
-      )}
-    </div>
+
+        {!selected ? (
+          <p className="rounded-lg bg-muted/40 p-3 text-center text-xs text-muted-foreground">
+            Select an element on a lane to edit its position, size, timing, and animation.
+          </p>
+        ) : (
+          // key by id so in-progress field drafts reset cleanly when the
+          // selection changes.
+          <div key={selected.id} className="overflow-hidden rounded-xl border border-border">
+            <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+              <span className="truncate text-sm font-medium" title={selected.name}>
+                {selected.name}
+              </span>
+              <button
+                onClick={onRemove}
+                title="Remove element (or press Delete)"
+                className="shrink-0 rounded-md p-1 text-destructive transition hover:bg-destructive/10"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+
+            <SettingRow label="Position">
+              <NumField label="x" value={selected.x} suffix="%" onCommit={(v) => onChange({ x: v })} />
+              <NumField label="y" value={selected.y} suffix="%" onCommit={(v) => onChange({ y: v })} />
+            </SettingRow>
+
+            <SettingRow label="Duration">
+              <NumField
+                label="start"
+                value={selected.startSec}
+                step={0.1}
+                suffix="s"
+                disabled={wholeVideo}
+                onCommit={(v) => onChange({ startSec: Math.max(0, v) })}
+              />
+              <NumField
+                label="end"
+                value={selected.endSec}
+                step={0.1}
+                suffix="s"
+                disabled={wholeVideo}
+                onCommit={(v) => onChange({ endSec: v })}
+              />
+              <label className="flex items-center gap-1.5 text-sm">
+                <span className="text-muted-foreground">full</span>
+                <Switch
+                  checked={wholeVideo}
+                  onCheckedChange={(on) =>
+                    on
+                      ? onChange({ startSec: 0, endSec: Math.max(0.5, total) })
+                      : onChange({ endSec: Math.min(selected.startSec + 3, total) })
+                  }
+                />
+              </label>
+            </SettingRow>
+
+            <SettingRow label="Orientation">
+              <NumField label="Size" value={selected.size} suffix="%" onCommit={(v) => onChange({ size: v })} />
+              <NumField label="Rotate" value={selected.rotation} suffix="°" onCommit={(v) => onChange({ rotation: v })} />
+            </SettingRow>
+
+            <SettingRow label="Animation">
+              <Select
+                value={selected.animation}
+                onChange={(e) => onChange({ animation: e.target.value as ElementAnimation })}
+                className="h-8 w-full"
+              >
+                <option value="none">None</option>
+                <option value="fade">Fade in</option>
+                <option value="pop">Pop in</option>
+                <option value="pulse">Pulse</option>
+                <option value="slide">Slide in</option>
+              </Select>
+            </SettingRow>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -22,6 +22,8 @@ import type {
   SeoSuggestions,
   SoundItem,
   SoundPlacement,
+  ElementItem,
+  ElementPlacement,
   UploadMeta,
   YoutubeState,
   YoutubeStatus,
@@ -258,6 +260,48 @@ export const api = {
     }),
   removePlacement: (id: string, placementId: string) =>
     request<SoundPlacement[]>(`/projects/${id}/video/sounds/${placementId}`, { method: 'DELETE' }),
+
+  // global elements library (overlay images / gifs / videos)
+  listElements: () => request<ElementItem[]>(`/elements`),
+  uploadElement: async (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/elements`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const b = await res.json();
+        if (b?.error) msg = b.error;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.json() as Promise<ElementItem>;
+  },
+  deleteElement: (id: string) => request<ElementItem[]>(`/elements/${id}`, { method: 'DELETE' }),
+
+  // per-project element placements
+  getProjectElements: (id: string) => request<ElementPlacement[]>(`/projects/${id}/video/elements`),
+  placeElement: (id: string, elementId: string, layer: number, atSec: number) =>
+    request<ElementPlacement>(`/projects/${id}/video/elements`, {
+      method: 'POST',
+      body: JSON.stringify({ elementId, layer, atSec })
+    }),
+  updateElement: (id: string, placementId: string, patch: Partial<Omit<ElementPlacement, 'id' | 'name' | 'file' | 'kind'>>) =>
+    request<ElementPlacement[]>(`/projects/${id}/video/elements/${placementId}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch)
+    }),
+  removeElement: (id: string, placementId: string) =>
+    request<ElementPlacement[]>(`/projects/${id}/video/elements/${placementId}`, { method: 'DELETE' }),
+  addElementLayer: (id: string) =>
+    request<{ elementLayers: number }>(`/projects/${id}/video/elements/layers`, { method: 'POST' }),
+  removeElementLayer: (id: string, layer: number) =>
+    request<{ elements: ElementPlacement[]; elementLayers: number }>(
+      `/projects/${id}/video/elements/layers/${layer}`,
+      { method: 'DELETE' }
+    ),
 
   // scenes (canonical breakdown)
   getScenes: (id: string) => request<Scene[]>(`/projects/${id}/scenes`),

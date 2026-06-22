@@ -314,6 +314,89 @@ export function useRemovePlacement(id: string) {
   });
 }
 
+// ── Global elements library ───────────────────────────────────────────────────
+export function useElementLibrary() {
+  return useQuery({ queryKey: ['element-library'] as const, queryFn: () => api.listElements() });
+}
+
+export function useUploadElement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.uploadElement(file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['element-library'] })
+  });
+}
+
+export function useDeleteElement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteElement(id),
+    onSuccess: (items) => qc.setQueryData(['element-library'], items)
+  });
+}
+
+// ── Per-project element placements ────────────────────────────────────────────
+export function useProjectElements(id: string | undefined) {
+  return useQuery({
+    queryKey: ['project-elements', id ?? ''] as const,
+    queryFn: () => api.getProjectElements(id!),
+    enabled: !!id
+  });
+}
+
+export function usePlaceElement(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ elementId, layer, atSec }: { elementId: string; layer: number; atSec: number }) =>
+      api.placeElement(id, elementId, layer, atSec),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-elements', id] });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+    }
+  });
+}
+
+export function useUpdateElement(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      placementId,
+      patch
+    }: {
+      placementId: string;
+      patch: Partial<import('./types').ElementPlacement>;
+    }) => api.updateElement(id, placementId, patch),
+    onSuccess: (items) => qc.setQueryData(['project-elements', id], items)
+  });
+}
+
+export function useRemoveElement(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (placementId: string) => api.removeElement(id, placementId),
+    onSuccess: (items) => qc.setQueryData(['project-elements', id], items)
+  });
+}
+
+export function useAddElementLayer(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.addElementLayer(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project(id) })
+  });
+}
+
+export function useRemoveElementLayer(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (layer: number) => api.removeElementLayer(id, layer),
+    onSuccess: (res) => {
+      qc.setQueryData(['project-elements', id], res.elements);
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+    }
+  });
+}
+
 // ── Media library ─────────────────────────────────────────────────────────────
 export function useLibrary(id: string | undefined) {
   return useQuery({

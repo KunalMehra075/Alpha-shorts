@@ -15,6 +15,11 @@ export function libraryUrl(file: string) {
   return `/library/${file}`;
 }
 
+// URL for a global Elements-library file (served by the API at /element-lib/<file>).
+export function elementUrl(file: string) {
+  return `/element-lib/${file}`;
+}
+
 export function formatBytes(bytes: number) {
   if (!bytes) return '—';
   const units = ['B', 'KB', 'MB', 'GB'];

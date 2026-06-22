@@ -9,7 +9,8 @@ import {
   LayoutDashboard,
   Music,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Shapes
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -20,6 +21,7 @@ const NAV = [
   { to: '/analytics', label: 'Analytics', icon: BarChart3, end: false },
   { to: '/assets', label: 'Assets', icon: ImageIcon, end: false },
   { to: '/audios', label: 'Audios', icon: Music, end: false },
+  { to: '/elements', label: 'Elements', icon: Shapes, end: false },
   { to: '/prompts', label: 'Prompts', icon: FileText, end: false }
 ];
 

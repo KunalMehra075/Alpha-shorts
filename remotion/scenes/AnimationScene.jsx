@@ -294,13 +294,25 @@ const RENDERERS = {
  * "Animation" scenes and as the universal fallback when no stock/library asset
  * can be found — so rendering never fails for lack of media.
  */
-export const AnimationScene = ({ kind = 'generic', seed = 0 }) => {
+// Subtle full-scene "breathing" zoom driven by the Animation-intensity setting,
+// so the slider has a visible effect on procedural scenes (50% = gentle default).
+const AnimatedWrap = ({ intensity = 50, children }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const amp = 0.02 + 0.04 * (intensity / 100); // 2%–6% breathing
+  const scale = 1 + amp * (0.5 - 0.5 * Math.cos((frame / fps) * Math.PI * 2 * 0.25));
+  return <AbsoluteFill style={{ transform: `scale(${scale})` }}>{children}</AbsoluteFill>;
+};
+
+export const AnimationScene = ({ kind = 'generic', seed = 0, intensity = 50 }) => {
   const Renderer = RENDERERS[kind] || Generic;
   const colors = THEMES[kind] || THEMES.generic;
   return (
     <AbsoluteFill>
       <Background colors={colors} />
-      <Renderer seed={seed} />
+      <AnimatedWrap intensity={intensity}>
+        <Renderer seed={seed} />
+      </AnimatedWrap>
     </AbsoluteFill>
   );
 };

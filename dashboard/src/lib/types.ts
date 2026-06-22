@@ -172,8 +172,44 @@ export type SoundPlacement = {
   volume: number;
 };
 
+export type ElementKind = 'image' | 'gif' | 'video';
+export type ElementAnimation = 'none' | 'fade' | 'pop' | 'pulse' | 'slide';
+
+export type ElementItem = {
+  id: string;
+  name: string;
+  file: string; // relative to the global /element-lib dir
+  kind: ElementKind;
+  sizeBytes: number;
+  durationSec: number; // 0 for static images
+  createdAt: string;
+};
+
+export type ElementPlacement = {
+  id: string;
+  name: string;
+  file: string; // project-relative
+  kind: ElementKind;
+  layer: number;
+  x: number; // center %, 0-100
+  y: number; // center %, 0-100
+  size: number; // width % of frame
+  rotation: number; // degrees
+  startSec: number;
+  endSec: number;
+  animation: ElementAnimation;
+};
+
 export type RenderTimelinePayload = {
-  scenes: { index: number; effect: string; transition: string; durationSec: number }[];
+  scenes: {
+    index: number;
+    effect: string;
+    transition: string;
+    durationSec: number;
+    motion: string;
+    zoom: number;
+    intensity: number;
+  }[];
   captionsEnabled: boolean;
   preset: string | null;
   music: { enabled: boolean; volume: number; fadeIn: boolean; fadeOut: boolean };
@@ -190,6 +226,8 @@ export type Manifest = ProjectSummary & {
   music: MusicTrack;
   library: LibraryItem[];
   sounds: SoundPlacement[];
+  elements: ElementPlacement[];
+  elementLayers: number;
   scenes: Scene[];
   renders: RenderRecord[];
   upload: UploadMeta;

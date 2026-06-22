@@ -3,13 +3,19 @@ import multer from 'multer';
 import { z } from 'zod';
 import { ah } from '../lib/async';
 import {
+  addElementLayer,
   deleteRender,
+  getElements,
   getSounds,
   readManifest,
+  removeElementLayer,
+  removeElementPlacement,
   removeSoundPlacement,
+  updateElementPlacement,
   updateSoundPlacement
 } from '../lib/store';
 import { placeSound } from '../lib/sounds';
+import { placeElement } from '../lib/elements';
 import {
   clearMusic,
   getRenderStatus,
@@ -30,7 +36,10 @@ const SceneTl = z.object({
   index: z.number().int(),
   effect: z.string().default(''),
   transition: z.string().default('Fade'),
-  durationSec: z.number()
+  durationSec: z.number(),
+  motion: z.string().default('cinematic'),
+  zoom: z.number().default(50),
+  intensity: z.number().default(50)
 });
 
 const RenderBody = z.object({
@@ -54,6 +63,22 @@ const PlaceBody = z.object({ soundId: z.string().min(1), atSec: z.number().min(0
 const PlacementPatch = z.object({
   atSec: z.number().min(0).optional(),
   volume: z.number().min(0).max(1).optional()
+});
+
+const ElementPlaceBody = z.object({
+  elementId: z.string().min(1),
+  layer: z.number().int().min(0).default(0),
+  atSec: z.number().min(0).default(0)
+});
+const ElementPatch = z.object({
+  x: z.number().optional(),
+  y: z.number().optional(),
+  size: z.number().optional(),
+  rotation: z.number().optional(),
+  startSec: z.number().min(0).optional(),
+  endSec: z.number().min(0).optional(),
+  layer: z.number().int().min(0).optional(),
+  animation: z.enum(['none', 'fade', 'pop', 'pulse', 'slide']).optional()
 });
 
 // GET all render records (with live progress overlaid).
@@ -143,6 +168,56 @@ videoRouter.delete(
   '/sounds/:placementId',
   ah((req, res) => {
     res.json(removeSoundPlacement(pid(req), req.params.placementId));
+  })
+);
+
+// ── Elements (visual overlay placements) ──────────────────────────────────────
+videoRouter.get(
+  '/elements',
+  ah((req, res) => {
+    readManifest(pid(req));
+    res.json(getElements(pid(req)));
+  })
+);
+
+videoRouter.post(
+  '/elements',
+  ah((req, res) => {
+    const body = ElementPlaceBody.parse(req.body);
+    res
+      .status(201)
+      .json(placeElement({ id: pid(req), elementId: body.elementId, layer: body.layer, atSec: body.atSec }));
+  })
+);
+
+// Add / remove an element lane. (Declared before ':placementId' routes so the
+// literal 'layers' segment matches first.)
+videoRouter.post(
+  '/elements/layers',
+  ah((req, res) => {
+    res.status(201).json({ elementLayers: addElementLayer(pid(req)) });
+  })
+);
+
+videoRouter.delete(
+  '/elements/layers/:layer',
+  ah((req, res) => {
+    res.json(removeElementLayer(pid(req), Number(req.params.layer)));
+  })
+);
+
+videoRouter.put(
+  '/elements/:placementId',
+  ah((req, res) => {
+    const body = ElementPatch.parse(req.body);
+    res.json(updateElementPlacement(pid(req), req.params.placementId, body));
+  })
+);
+
+videoRouter.delete(
+  '/elements/:placementId',
+  ah((req, res) => {
+    res.json(removeElementPlacement(pid(req), req.params.placementId));
   })
 );
 

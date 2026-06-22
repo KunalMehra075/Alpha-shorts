@@ -6,6 +6,7 @@ import { ProjectsPage } from '@/pages/ProjectsPage';
 import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { AssetsPage } from '@/pages/AssetsPage';
 import { AudiosPage } from '@/pages/AudiosPage';
+import { ElementsPage } from '@/pages/ElementsPage';
 import { PromptsPage } from '@/pages/PromptsPage';
 import { ScriptPage } from '@/pages/ScriptPage';
 import { AudioPage } from '@/pages/AudioPage';
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
       { path: 'analytics', element: <AnalyticsPage /> },
       { path: 'assets', element: <AssetsPage /> },
       { path: 'audios', element: <AudiosPage /> },
+      { path: 'elements', element: <ElementsPage /> },
       { path: 'prompts', element: <PromptsPage /> },
       // Back-compat: old /templates path → Prompts
       { path: 'templates', element: <Navigate to="/prompts" replace /> },

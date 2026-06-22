@@ -11,6 +11,7 @@ import {
   getAssetsState,
   getAudioState,
   getCaptions,
+  getElements,
   getLibrary,
   getMusic,
   getRenders,
@@ -97,7 +98,15 @@ function stage(absPath: string, name: string) {
 }
 
 export type RenderTimeline = {
-  scenes: { index: number; effect: string; transition: string; durationSec: number }[];
+  scenes: {
+    index: number;
+    effect: string;
+    transition: string;
+    durationSec: number;
+    motion?: string;
+    zoom?: number;
+    intensity?: number;
+  }[];
   captionsEnabled: boolean;
   preset: string | null;
   music?: { enabled: boolean; volume: number; fadeIn: boolean; fadeOut: boolean };
@@ -206,6 +215,9 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
       transitionIn: mapTransition(tl?.transition ?? 'Fade'),
       effect,
       animationKind,
+      motion: tl?.motion ?? 'cinematic',
+      zoom: tl?.zoom ?? 50,
+      intensity: tl?.intensity ?? 50,
       assets: sceneAssets
     };
     from += durationInFrames;
@@ -249,6 +261,27 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
       }));
   }
 
+  // Visual overlay elements placed on the timeline (staged like other media).
+  // Sorted by layer so later (higher) layers render on top; endSec clamped to
+  // the total video length.
+  const totalSec = from / fps;
+  const elements = getElements(id)
+    .filter((p) => existsSync(join(projectDir(id), p.file)))
+    .slice()
+    .sort((a, b) => a.layer - b.layer)
+    .map((p, i) => ({
+      src: stage(join(projectDir(id), p.file), `element-${i}`),
+      kind: p.kind,
+      x: p.x,
+      y: p.y,
+      size: p.size,
+      rotation: p.rotation,
+      fromSec: Math.max(0, p.startSec),
+      toSec: Math.min(p.endSec, totalSec),
+      animation: p.animation
+    }))
+    .filter((e) => e.toSec > e.fromSec);
+
   return {
     width: cfg.render.width ?? 1080,
     height: cfg.render.height ?? 1920,
@@ -259,6 +292,7 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
     music,
     captions,
     sounds,
+    elements,
     scenes: outScenes,
     _config: cfg
   };

@@ -51,11 +51,17 @@ export default {
         'slide-up': {
           from: { opacity: '0', transform: 'translate(-50%, calc(-50% + 6px))' },
           to: { opacity: '1', transform: 'translate(-50%, -50%)' }
+        },
+        // Right-side drawer (Sheet) — slides in from the right edge.
+        'slide-in-right': {
+          from: { transform: 'translateX(100%)' },
+          to: { transform: 'translateX(0)' }
         }
       },
       animation: {
         'fade-in': 'fade-in 150ms ease-out',
-        'slide-up': 'slide-up 180ms ease-out'
+        'slide-up': 'slide-up 180ms ease-out',
+        'slide-in-right': 'slide-in-right 200ms ease-out'
       }
     }
   },

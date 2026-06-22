@@ -17,7 +17,8 @@ export default defineConfig({
       '/api': { target: API_TARGET, changeOrigin: true },
       '/media': { target: API_TARGET, changeOrigin: true },
       '/sounds': { target: API_TARGET, changeOrigin: true },
-      '/library': { target: API_TARGET, changeOrigin: true }
+      '/library': { target: API_TARGET, changeOrigin: true },
+      '/element-lib': { target: API_TARGET, changeOrigin: true }
     }
   }
 });

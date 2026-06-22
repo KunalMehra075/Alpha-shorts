@@ -6,6 +6,7 @@ import { VideoScene } from './scenes/VideoScene.jsx';
 import { AnimationScene } from './scenes/AnimationScene.jsx';
 import { SplitScreenScene } from './scenes/SplitScreenScene.jsx';
 import { Captions } from './components/Captions.jsx';
+import { Elements } from './components/Elements.jsx';
 
 function renderScene(scene) {
   const common = {
@@ -13,9 +14,15 @@ function renderScene(scene) {
     seed: scene.index,
     keywords: scene.keywords
   };
+  // Motion controls (Scene settings): default to 50/50/cinematic.
+  const motion = {
+    zoom: scene.zoom ?? 50,
+    intensity: scene.intensity ?? 50,
+    motion: scene.motion ?? 'cinematic'
+  };
   switch (scene.visualType) {
     case 'video':
-      return <VideoScene asset={scene.assets[0]} effect={scene.effect} {...common} />;
+      return <VideoScene asset={scene.assets[0]} effect={scene.effect} {...common} {...motion} />;
     case 'splitscreen':
       return (
         <SplitScreenScene
@@ -25,10 +32,10 @@ function renderScene(scene) {
         />
       );
     case 'animation':
-      return <AnimationScene kind={scene.animationKind} {...common} />;
+      return <AnimationScene kind={scene.animationKind} {...common} intensity={motion.intensity} />;
     case 'image':
     default:
-      return <ImageScene asset={scene.assets[0]} effect={scene.effect} {...common} />;
+      return <ImageScene asset={scene.assets[0]} effect={scene.effect} {...common} {...motion} />;
   }
 }
 
@@ -67,7 +74,7 @@ const SoundLayer = ({ sounds }) => {
   );
 };
 
-export const ShortsVideo = ({ scenes = [], narration, music, transitionFrames = 15, captions, sounds }) => {
+export const ShortsVideo = ({ scenes = [], narration, music, transitionFrames = 15, captions, sounds, elements }) => {
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {scenes.map((scene) => (
@@ -85,6 +92,9 @@ export const ShortsVideo = ({ scenes = [], narration, music, transitionFrames = 
           </SceneTransition>
         </Sequence>
       ))}
+
+      {/* Visual overlay elements sit above the scenes, below the captions. */}
+      {Array.isArray(elements) && elements.length ? <Elements elements={elements} /> : null}
 
       {/* Caption overlay sits above the scenes (dashboard render only). */}
       {captions?.enabled && captions.lines?.length ? (

@@ -593,6 +593,90 @@ export function removeSoundPlacement(id: string, placementId: string): Manifest[
   return m.sounds;
 }
 
+// ── Elements (visual overlay placements) ──────────────────────────────────────
+export function elementsDir(id: string) {
+  return join(projectDir(id), 'elements');
+}
+export function getElements(id: string) {
+  return readManifest(id).elements;
+}
+export function addElementPlacement(id: string, rec: Manifest['elements'][number]): Manifest['elements'] {
+  const m = readManifest(id);
+  m.elements.push(rec);
+  m.elements.sort((a, b) => a.startSec - b.startSec);
+  if (rec.layer + 1 > m.elementLayers) m.elementLayers = rec.layer + 1;
+  writeManifest(m);
+  return m.elements;
+}
+export function updateElementPlacement(
+  id: string,
+  placementId: string,
+  patch: Partial<Manifest['elements'][number]>
+): Manifest['elements'] {
+  const m = readManifest(id);
+  const rec = m.elements.find((e) => e.id === placementId);
+  if (!rec) throw new HttpError(404, `Element placement "${placementId}" not found.`);
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  if (patch.x !== undefined) rec.x = clamp(patch.x, 0, 100);
+  if (patch.y !== undefined) rec.y = clamp(patch.y, 0, 100);
+  if (patch.size !== undefined) rec.size = clamp(patch.size, 1, 200);
+  if (patch.rotation !== undefined) rec.rotation = patch.rotation;
+  if (patch.startSec !== undefined) rec.startSec = Math.max(0, patch.startSec);
+  if (patch.endSec !== undefined) rec.endSec = Math.max(0, patch.endSec);
+  if (patch.layer !== undefined) rec.layer = Math.max(0, Math.round(patch.layer));
+  if (patch.animation !== undefined) rec.animation = patch.animation;
+  if (rec.endSec <= rec.startSec) rec.endSec = Math.round((rec.startSec + 0.5) * 100) / 100;
+  m.elements.sort((a, b) => a.startSec - b.startSec);
+  if (rec.layer + 1 > m.elementLayers) m.elementLayers = rec.layer + 1;
+  writeManifest(m);
+  return m.elements;
+}
+export function removeElementPlacement(id: string, placementId: string): Manifest['elements'] {
+  const m = readManifest(id);
+  const rec = m.elements.find((e) => e.id === placementId);
+  if (!rec) throw new HttpError(404, `Element placement "${placementId}" not found.`);
+  removePath(join(projectDir(id), rec.file));
+  if (rec.keyedFile) removePath(join(projectDir(id), rec.keyedFile));
+  m.elements = m.elements.filter((e) => e.id !== placementId);
+  writeManifest(m);
+  return m.elements;
+}
+
+// Persist chroma settings + the baked keyed-file path for one placement.
+export function setElementChroma(
+  id: string,
+  placementId: string,
+  chroma: Manifest['elements'][number]['chroma'],
+  keyedFile: string | null
+): Manifest['elements'] {
+  const m = readManifest(id);
+  const rec = m.elements.find((e) => e.id === placementId);
+  if (!rec) throw new HttpError(404, `Element placement "${placementId}" not found.`);
+  rec.chroma = chroma;
+  rec.keyedFile = keyedFile;
+  writeManifest(m);
+  return m.elements;
+}
+export function addElementLayer(id: string): Manifest['elementLayers'] {
+  const m = readManifest(id);
+  m.elementLayers += 1;
+  writeManifest(m);
+  return m.elementLayers;
+}
+export function removeElementLayer(
+  id: string,
+  layer: number
+): { elements: Manifest['elements']; elementLayers: Manifest['elementLayers'] } {
+  const m = readManifest(id);
+  if (m.elementLayers <= 1) throw new HttpError(400, 'At least one element layer is required.');
+  if (m.elements.some((e) => e.layer === layer))
+    throw new HttpError(400, 'Layer is not empty — remove its elements first.');
+  for (const e of m.elements) if (e.layer > layer) e.layer -= 1;
+  m.elementLayers -= 1;
+  writeManifest(m);
+  return { elements: m.elements, elementLayers: m.elementLayers };
+}
+
 // ── Background music ──────────────────────────────────────────────────────────
 
 export function musicDir(id: string) {
