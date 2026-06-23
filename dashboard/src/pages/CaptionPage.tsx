@@ -9,6 +9,7 @@ import {
   Pause,
   Play,
   Sparkles,
+  SpellCheck,
   Volume2,
   VolumeX
 } from 'lucide-react';
@@ -28,6 +29,7 @@ import { cn, mediaUrl } from '@/lib/utils';
 import { formatBytes, formatDuration } from '@/lib/mockMedia';
 import {
   useCaptions,
+  useFixCaptions,
   useGenerateCaptions,
   useRenderCaptionOverlay,
   useSaveCaptions
@@ -41,6 +43,7 @@ export function CaptionPage() {
   const { project, id } = useProjectCtx();
   const { data: caps } = useCaptions(id);
   const generate = useGenerateCaptions(id);
+  const fix = useFixCaptions(id);
   const save = useSaveCaptions(id);
   const render = useRenderCaptionOverlay(id);
 
@@ -84,6 +87,24 @@ export function CaptionPage() {
       // instead of reusing the cached one.
       await generate.mutateAsync({ language, settings, force: true });
       toast.success(caps?.hasTranscript ? 'Re-transcribed' : 'Captions transcribed');
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+
+  // One-click spelling fix using the script as ground truth (align → AI fallback).
+  const runFix = async () => {
+    try {
+      const r = await fix.mutateAsync();
+      setSettings(r.state.settings);
+      setLines(r.state.lines);
+      setDirty(false);
+      const how = r.method === 'ai' ? 'AI' : 'script alignment';
+      toast.success(
+        r.corrected > 0
+          ? `Fixed ${r.corrected} word${r.corrected === 1 ? '' : 's'} via ${how}`
+          : `Captions already match the script (${how})`
+      );
     } catch (e: any) {
       toast.error(String(e.message ?? e));
     }
@@ -176,17 +197,37 @@ export function CaptionPage() {
                   ))}
                 </div>
               </div>
-              <Button variant="primary" onClick={runGenerate} disabled={generate.isPending}>
-                {generate.isPending ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" /> Transcribing…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="size-4" /> {hasTranscript ? 'Re-transcribe' : 'Generate Captions'}
-                  </>
+              <div className="flex flex-wrap items-center gap-2">
+                {hasTranscript && (
+                  <Button
+                    variant="outline"
+                    onClick={runFix}
+                    disabled={fix.isPending || generate.isPending}
+                    title="Fix caption spelling — uses your script if available, otherwise AI from context"
+                  >
+                    {fix.isPending ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" /> Fixing…
+                      </>
+                    ) : (
+                      <>
+                        <SpellCheck className="size-4" /> Fix spelling
+                      </>
+                    )}
+                  </Button>
                 )}
-              </Button>
+                <Button variant="primary" onClick={runGenerate} disabled={generate.isPending || fix.isPending}>
+                  {generate.isPending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" /> Transcribing…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="size-4" /> {hasTranscript ? 'Re-transcribe' : 'Generate Captions'}
+                    </>
+                  )}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

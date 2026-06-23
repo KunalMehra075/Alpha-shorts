@@ -4,6 +4,8 @@ import { MockStrategy } from './mock';
 import type {
   BreakdownInput,
   BreakdownResult,
+  CaptionFixInput,
+  CaptionFixResult,
   ScriptInput,
   ScriptResult,
   ScriptStrategy,
@@ -14,6 +16,8 @@ import type {
 export type {
   BreakdownInput,
   BreakdownResult,
+  CaptionFixInput,
+  CaptionFixResult,
   ScriptInput,
   ScriptResult,
   ScriptStrategy,
@@ -67,6 +71,24 @@ export class ScriptGenerator {
       }
     }
     throw new Error(`All breakdown strategies failed: ${attempts.join(' | ')}`);
+  }
+
+  async runFixCaptions(
+    input: CaptionFixInput
+  ): Promise<CaptionFixResult & { mock: boolean; attempts: string[] }> {
+    const attempts: string[] = [];
+    for (const strategy of this.strategies) {
+      if (!strategy.isAvailable()) continue;
+      try {
+        const result = await strategy.fixCaptions(input);
+        return { ...result, mock: strategy.name === 'mock', attempts };
+      } catch (err: any) {
+        const msg = `${strategy.name}: ${err?.message ?? err}`;
+        attempts.push(msg);
+        console.warn(`[caption-fix] ${msg} — falling back`);
+      }
+    }
+    throw new Error(`All caption-fix strategies failed: ${attempts.join(' | ')}`);
   }
 
   async runSeo(input: SeoInput): Promise<SeoResult & { mock: boolean; attempts: string[] }> {

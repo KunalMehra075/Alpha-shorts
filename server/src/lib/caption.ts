@@ -7,8 +7,20 @@ import { buildAss } from '../../../src/lib/ass-generator.js';
 import { getDuration } from '../../../src/lib/ffmpeg.js';
 import { ensureDir } from './fsx';
 import { projectDir } from './paths';
-import { HttpError, captionsDir, getAudioState, getCaptions, getScenes, setCaptions, setScenes } from './store';
+import {
+  HttpError,
+  captionsDir,
+  getAudioState,
+  getCaptions,
+  getCurrentScript,
+  getScenes,
+  setCaptions,
+  setScenes
+} from './store';
+import { defaultScriptGenerator } from './llm';
 import type { CaptionLine, CaptionSettings } from './schema';
+
+const captionGenerator = defaultScriptGenerator();
 
 type Word = { word: string; start: number; end: number };
 
@@ -421,4 +433,239 @@ export async function retimeScenesToAudio(id: string): Promise<boolean> {
 
   setScenes(id, scenes);
   return true;
+}
+
+// ── Fix captions from the script (Option A: alignment, Option B: AI fallback) ──
+
+// Normalize a token for comparison (lowercase, drop punctuation; Unicode-aware).
+function normToken(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + cost);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+function similarity(a: string, b: string): number {
+  const x = normToken(a);
+  const y = normToken(b);
+  if (!x && !y) return 1;
+  if (!x || !y) return 0;
+  return 1 - levenshtein(x, y) / Math.max(x.length, y.length);
+}
+
+/**
+ * Option A — align the ground-truth script tokens to the Whisper word timings via
+ * Needleman–Wunsch, emitting one corrected word per SCRIPT token (text from the
+ * script, timestamp from the matched Whisper word; gaps interpolated). Returns the
+ * corrected words plus how many script tokens matched a Whisper word (confidence).
+ */
+function alignScriptToWords(scriptToks: string[], words: Word[]): { words: Word[]; matched: number } {
+  const S = scriptToks.length;
+  const W = words.length;
+  const GAP = -0.6;
+  const score: number[][] = Array.from({ length: S + 1 }, () => new Array(W + 1).fill(0));
+  const ptr: number[][] = Array.from({ length: S + 1 }, () => new Array(W + 1).fill(0)); // 0 diag, 1 up (script-only), 2 left (whisper-only)
+  for (let i = 1; i <= S; i++) {
+    score[i][0] = score[i - 1][0] + GAP;
+    ptr[i][0] = 1;
+  }
+  for (let j = 1; j <= W; j++) {
+    score[0][j] = score[0][j - 1] + GAP;
+    ptr[0][j] = 2;
+  }
+  for (let i = 1; i <= S; i++) {
+    for (let j = 1; j <= W; j++) {
+      const sim = similarity(scriptToks[i - 1], words[j - 1].word);
+      const diag = score[i - 1][j - 1] + (sim * 2 - 0.5); // reward similar tokens
+      const up = score[i - 1][j] + GAP;
+      const left = score[i][j - 1] + GAP;
+      let best = diag;
+      let p = 0;
+      if (up > best) {
+        best = up;
+        p = 1;
+      }
+      if (left > best) {
+        best = left;
+        p = 2;
+      }
+      score[i][j] = best;
+      ptr[i][j] = p;
+    }
+  }
+
+  // Traceback into aligned pairs.
+  const aligned: { s?: string; w?: Word }[] = [];
+  let i = S;
+  let j = W;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && ptr[i][j] === 0) {
+      aligned.push({ s: scriptToks[i - 1], w: words[j - 1] });
+      i--;
+      j--;
+    } else if (i > 0 && (j === 0 || ptr[i][j] === 1)) {
+      aligned.push({ s: scriptToks[i - 1] });
+      i--;
+    } else {
+      aligned.push({ w: words[j - 1] });
+      j--;
+    }
+  }
+  aligned.reverse();
+
+  // Emit one timed word per script token; interpolate runs that Whisper missed.
+  const out: Word[] = [];
+  let matched = 0;
+  let pending: string[] = [];
+  let lastEnd = 0;
+  const lastWordEnd = W ? words[W - 1].end : 0;
+  const flushPending = (nextStart: number) => {
+    if (!pending.length) return;
+    const span = Math.max(0.01, nextStart - lastEnd);
+    const each = span / pending.length;
+    pending.forEach((tok, k) => out.push({ word: tok, start: lastEnd + each * k, end: lastEnd + each * (k + 1) }));
+    lastEnd = nextStart;
+    pending = [];
+  };
+  for (const a of aligned) {
+    if (a.s && a.w) {
+      flushPending(a.w.start);
+      out.push({ word: a.s, start: a.w.start, end: a.w.end });
+      lastEnd = a.w.end;
+      matched++;
+    } else if (a.s) {
+      pending.push(a.s); // script token Whisper missed → interpolate later
+    }
+    // a.w only (Whisper insertion / hallucination) → dropped
+  }
+  flushPending(Math.max(lastEnd + 0.3, lastWordEnd));
+  return { words: out, matched };
+}
+
+// Derive word-level timings from corrected line texts (Option B), splitting each
+// line's text evenly across its [start, end] span.
+function wordsFromCorrectedLines(lines: CaptionLine[], texts: string[]): Word[] {
+  const out: Word[] = [];
+  lines.forEach((ln, i) => {
+    const toks = (texts[i] ?? ln.text).trim().split(/\s+/).filter(Boolean);
+    if (!toks.length) return;
+    const dur = Math.max(0.2, ln.end - ln.start);
+    const per = dur / toks.length;
+    toks.forEach((t, k) => out.push({ word: t, start: ln.start + per * k, end: ln.start + per * (k + 1) }));
+  });
+  return out;
+}
+
+/**
+ * One-click caption correction. Replaces the captions in place (re-chunked to the
+ * current words-per-line) and clears the now-stale overlay. Two paths:
+ *  - WITH a script: Option A snaps the script words onto the Whisper word timings
+ *    (perfect spelling, timings preserved); if alignment is low-confidence and a
+ *    real LLM is configured, Option B corrects the lines via the model instead.
+ *  - WITHOUT a script: an LLM fixes spelling/punctuation from the captions' own
+ *    context (no script reference), preserving every word, order and timing.
+ * Requires an existing transcript (and, for the no-script path, a real LLM).
+ */
+export async function fixCaptions(
+  id: string
+): Promise<{ state: ReturnType<typeof getCaptionsState>; method: 'align' | 'ai'; corrected: number }> {
+  const script = getCurrentScript(id)?.voiceoverScript?.trim() || '';
+  const caps = getCaptionsState(id);
+  if (!caps.hasTranscript) throw new HttpError(400, 'Generate captions first.');
+  const words = readWords(id);
+  if (!words.length) throw new HttpError(400, 'No transcript words found — re-generate captions first.');
+
+  const aiAvailable = captionGenerator.available().some((n) => n !== 'mock');
+
+  let finalWords: Word[];
+  let method: 'align' | 'ai';
+
+  if (script) {
+    // Option A — deterministic alignment to the ground-truth script.
+    const scriptToks = script.split(/\s+/).filter(Boolean);
+    const a = alignScriptToWords(scriptToks, words);
+    const matchRatio = scriptToks.length ? a.matched / scriptToks.length : 0;
+    const lenRatio = words.length ? scriptToks.length / words.length : 0;
+    const aConfident = matchRatio >= 0.6 && lenRatio >= 0.5 && lenRatio <= 2;
+
+    finalWords = a.words;
+    method = 'align';
+
+    // Option B fallback — only when A is shaky AND a real (non-mock) LLM exists.
+    if (!aConfident && aiAvailable && caps.lines.length > 0) {
+      try {
+        const r = await captionGenerator.runFixCaptions({
+          script,
+          lines: caps.lines.map((l) => l.text),
+          language: caps.language
+        });
+        if (!r.mock && r.lines.length === caps.lines.length) {
+          finalWords = wordsFromCorrectedLines(caps.lines, r.lines);
+          method = 'ai';
+        }
+      } catch {
+        /* keep Option A's result */
+      }
+    }
+  } else {
+    // No script → context-based AI spell-fix (requires a real LLM).
+    if (!aiAvailable) {
+      throw new HttpError(
+        400,
+        'No script and no AI provider configured. Add an API key (or write a script) to fix captions.'
+      );
+    }
+    if (!caps.lines.length) throw new HttpError(400, 'No caption lines to fix.');
+    const r = await captionGenerator.runFixCaptions({
+      script: '', // signals context-only mode to the prompt
+      lines: caps.lines.map((l) => l.text),
+      language: caps.language
+    });
+    if (r.mock || r.lines.length !== caps.lines.length) {
+      throw new HttpError(502, 'AI caption fix did not return a usable result — please try again.');
+    }
+    finalWords = wordsFromCorrectedLines(caps.lines, r.lines);
+    method = 'ai';
+  }
+
+  // Count corrected tokens (normalized comparison vs the original Whisper words).
+  const beforeNorm = words.map((w) => normToken(w.word));
+  const afterNorm = finalWords.map((w) => normToken(w.word));
+  let corrected = 0;
+  const n = Math.max(beforeNorm.length, afterNorm.length);
+  for (let k = 0; k < n; k++) {
+    if (beforeNorm[k] !== afterNorm[k]) corrected++;
+  }
+
+  // Re-chunk + persist in place; drop the stale overlay (text changed).
+  const perLine = clampWordsPerLine(caps.settings.wordsPerLine);
+  const lines = groupLines(finalWords, perLine);
+  const dir = captionsDir(id);
+  ensureDir(dir);
+  writeFileSync(join(dir, 'words.json'), JSON.stringify(finalWords, null, 2));
+  writeFileSync(join(dir, 'captions.srt'), toSrt(lines));
+  writeFileSync(
+    join(dir, 'caption.json'),
+    JSON.stringify({ language: caps.language, settings: caps.settings, lines, words: finalWords }, null, 2)
+  );
+  setCaptions(id, { lines, wordsCount: finalWords.length, overlay: null });
+
+  return { state: getCaptionsState(id), method, corrected };
 }

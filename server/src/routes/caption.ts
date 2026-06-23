@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ah } from '../lib/async';
 import { CaptionLine, CaptionSettings } from '../lib/schema';
 import { getCaptions, readManifest } from '../lib/store';
-import { generateCaptions, renderCaptionOverlay, saveCaptions } from '../lib/caption';
+import { fixCaptions, generateCaptions, renderCaptionOverlay, saveCaptions } from '../lib/caption';
 
 export const captionRouter = Router({ mergeParams: true });
 
@@ -47,6 +47,15 @@ captionRouter.post(
     const force = body.force === true || (m.captions.hasTranscript && language !== m.captions.language);
     const state = await generateCaptions({ id, language, settings, force });
     res.status(201).json(state);
+  })
+);
+
+// POST fix captions in place using the script as ground truth (align + AI fallback)
+captionRouter.post(
+  '/fix',
+  ah(async (req, res) => {
+    readManifest(pid(req));
+    res.json(await fixCaptions(pid(req)));
   })
 );
 

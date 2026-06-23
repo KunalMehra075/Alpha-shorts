@@ -1,14 +1,18 @@
 import {
+  buildCaptionFixMessages,
   buildDirectorMessages,
   buildSeoMessages,
   buildWriterMessages,
   parseBreakdown,
+  parseCaptionFix,
   parseNarration,
   parseSeo
 } from './prompt';
 import type {
   BreakdownInput,
   BreakdownResult,
+  CaptionFixInput,
+  CaptionFixResult,
   ScriptInput,
   ScriptResult,
   ScriptStrategy,
@@ -99,5 +103,11 @@ export abstract class OpenAICompatStrategy implements ScriptStrategy {
     const { system, user } = buildSeoMessages(input);
     const out = parseSeo(await this.chat(system, user));
     return { ...out, provider: this.name };
+  }
+
+  async fixCaptions(input: CaptionFixInput): Promise<CaptionFixResult> {
+    const { system, user } = buildCaptionFixMessages(input);
+    const lines = parseCaptionFix(await this.chat(system, user, 4000));
+    return { lines, provider: this.name };
   }
 }

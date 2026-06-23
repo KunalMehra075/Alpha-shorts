@@ -162,6 +162,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(body)
     }),
+  fixCaptions: (id: string) =>
+    request<{ state: CaptionsState; method: 'align' | 'ai'; corrected: number }>(
+      `/projects/${id}/caption/fix`,
+      { method: 'POST' }
+    ),
   renderCaptionOverlay: (id: string) =>
     request<CaptionOverlay>(`/projects/${id}/caption/render`, { method: 'POST' }),
 

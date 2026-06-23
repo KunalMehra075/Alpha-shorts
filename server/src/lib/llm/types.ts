@@ -39,6 +39,18 @@ export type SeoResult = {
   provider: string;
 };
 
+// Correcting auto-transcribed caption lines against the ground-truth script.
+export type CaptionFixInput = {
+  script: string; // ground-truth narration
+  lines: string[]; // current caption line texts, in order
+  language: string;
+};
+
+export type CaptionFixResult = {
+  lines: string[]; // corrected line texts, same count/order
+  provider: string;
+};
+
 /**
  * Strategy interface for an LLM provider. Each concrete strategy (DeepSeek,
  * OpenAI, Mock) knows whether it's configured (isAvailable), how to WRITE the
@@ -51,4 +63,5 @@ export interface ScriptStrategy {
   generate(input: ScriptInput): Promise<ScriptResult>;
   breakdown(input: BreakdownInput): Promise<BreakdownResult>;
   seo(input: SeoInput): Promise<SeoResult>;
+  fixCaptions(input: CaptionFixInput): Promise<CaptionFixResult>;
 }

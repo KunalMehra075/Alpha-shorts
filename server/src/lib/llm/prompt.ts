@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Scene, VisualType } from '../schema';
-import type { BreakdownInput, ScriptInput, SeoInput } from './types';
+import type { BreakdownInput, CaptionFixInput, ScriptInput, SeoInput } from './types';
 
 const LANG_LABEL: Record<string, string> = {
   en: 'English',
@@ -173,6 +173,56 @@ RULES:
 Respond with ONLY the JSON object.`;
   const user = `TOPIC: ${input.topic}\n\nSCRIPT:\n${input.script.trim().slice(0, 1500)}\n\nProduce the JSON now.`;
   return { system, user };
+}
+
+export const CaptionFixOutput = z.object({ lines: z.array(z.string()).default([]) });
+
+/**
+ * CAPTION FIX PROMPT — corrects misspelled auto-transcribed caption lines.
+ * Two modes:
+ *  - with a ground-truth SCRIPT (Option B fallback): use it as the source of truth.
+ *  - without a script: fix spelling/punctuation purely from the captions' context.
+ * Both preserve line count/order so existing per-line timings still apply, and are
+ * constrained to word/punctuation fixes only (no add/remove/reorder/rephrase).
+ */
+export function buildCaptionFixMessages(input: CaptionFixInput) {
+  const hasScript = input.script.trim().length > 0;
+
+  const common = `You ALWAYS respond with a SINGLE valid JSON object and NOTHING else — no markdown, no commentary.
+
+OUTPUT JSON — exactly this shape:
+{ "lines": ["corrected text for line 1", "corrected text for line 2", ...] }
+
+HARD CONSTRAINTS (never violate):
+- Return EXACTLY ${input.lines.length} lines, in the same order — one corrected string per input line.
+- Fix ONLY spelling and punctuation of the words that are already present.
+- Do NOT add, remove, reorder, merge, split, rephrase, or translate words. Keep each line's words and their order; only correct how they are spelled/punctuated.
+- Preserve the original writing system (e.g. Devanagari stays Devanagari) and natural casing.
+- If a line is already correct, return it unchanged.`;
+
+  if (hasScript) {
+    const system = `You correct auto-transcribed video captions using the EXACT narration SCRIPT as the source of truth for spelling.\n\n${common}`;
+    const user = `SCRIPT (ground truth):
+${input.script.trim()}
+
+CAPTION LINES (${input.lines.length}) to correct, in order:
+${JSON.stringify(input.lines)}
+
+Return the JSON now.`;
+    return { system, user };
+  }
+
+  const system = `You correct the spelling and punctuation of auto-transcribed video captions. There is NO reference script — infer each intended word from the surrounding context of the captions themselves, then fix only obvious transcription spelling/punctuation errors.\n\n${common}`;
+  const user = `CAPTION LINES (${input.lines.length}) to correct, in order:
+${JSON.stringify(input.lines)}
+
+Return the JSON now.`;
+  return { system, user };
+}
+
+export function parseCaptionFix(text: string): string[] {
+  const out = CaptionFixOutput.parse(extractJson(text));
+  return out.lines.map((s) => (s ?? '').toString());
 }
 
 export function parseSeo(text: string): { titles: string[]; descriptions: string[]; tags: string[] } {

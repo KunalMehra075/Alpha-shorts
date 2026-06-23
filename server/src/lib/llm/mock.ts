@@ -2,6 +2,8 @@ import { generateMockBreakdown, generateMockNarration, generateMockSeo } from '.
 import type {
   BreakdownInput,
   BreakdownResult,
+  CaptionFixInput,
+  CaptionFixResult,
   ScriptInput,
   ScriptResult,
   ScriptStrategy,
@@ -24,5 +26,10 @@ export class MockStrategy implements ScriptStrategy {
   }
   async seo(input: SeoInput): Promise<SeoResult> {
     return { ...generateMockSeo(input.topic), provider: 'mock' };
+  }
+  async fixCaptions(input: CaptionFixInput): Promise<CaptionFixResult> {
+    // No real model — return the lines unchanged so the caller falls back to the
+    // deterministic alignment (Option A).
+    return { lines: input.lines, provider: 'mock' };
   }
 }

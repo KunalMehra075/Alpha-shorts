@@ -216,6 +216,18 @@ export function useGenerateCaptions(id: string) {
   });
 }
 
+export function useFixCaptions(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.fixCaptions(id),
+    onSuccess: (r) => {
+      qc.setQueryData(qk.captions(id), r.state);
+      qc.invalidateQueries({ queryKey: qk.captions(id) });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+    }
+  });
+}
+
 export function useSaveCaptions(id: string) {
   const qc = useQueryClient();
   return useMutation({
