@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
+  ArrowUpRight,
   Captions as CaptionsIcon,
   Clapperboard,
   Download,
@@ -17,6 +18,7 @@ import {
   Shapes,
   Sparkles,
   Trash2,
+  Upload,
   X,
   ZoomIn,
   ZoomOut
@@ -32,9 +34,10 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TabHeader } from '@/components/TabHeader';
 import { TransitionIcon } from '@/components/TransitionIcon';
-import { cn, elementUrl, libraryUrl, relativeTime } from '@/lib/utils';
+import { cn, elementUrl, libraryUrl, mediaUrl, relativeTime } from '@/lib/utils';
 import {
   useAddElementLayer,
   useAssets,
@@ -47,8 +50,10 @@ import {
   useMusicFromGlobal,
   useMusicFromLibrary,
   usePlaceElement,
+  usePlaceElementFromLibrary,
   usePlaceSound,
   useProjectElements,
+  useUploadProjectElement,
   useRemoveElement,
   useRemoveElementLayer,
   useRemovePlacement,
@@ -58,6 +63,7 @@ import {
   useSoundLibrary,
   useUpdateElement,
   useUpdatePlacement,
+  useUploadLibrary,
   useUploadMusic,
   useUploadSound,
   useVideoSounds
@@ -197,10 +203,75 @@ export function VideoEditorPage() {
   const elements = elementsData ?? [];
   const elementLayers = project.elementLayers ?? 2;
   const placeElement = usePlaceElement(id);
+  const uploadProjectElement = useUploadProjectElement(id);
+  const placeFromLibrary = usePlaceElementFromLibrary(id);
+  const uploadLibrary = useUploadLibrary(id);
+  const elementFileRef = useRef<HTMLInputElement>(null);
+  const [elDragOver, setElDragOver] = useState(false);
+  const elDragDepth = useRef(0);
+  // Preview an element/asset in a modal (the small arrow on each card).
+  const [previewItem, setPreviewItem] = useState<{ url: string; kind: string; name: string } | null>(null);
+
+  // Drag & drop files onto the Add-elements sheet → add them to THIS project's
+  // assets (the Asset Library). They then appear under the "This project" tab to
+  // place as elements.
+  const onDropToAssets = async (files: File[]) => {
+    const media = files.filter(
+      (f) => /^(image|video)\//.test(f.type) || /\.(gif|svg|avif|webp|mp4|mov|webm|mkv|m4v)$/i.test(f.name)
+    );
+    if (!media.length) {
+      toast.error("Drop an image or video to add to this project's assets.");
+      return;
+    }
+    let ok = 0;
+    for (const f of media) {
+      try {
+        await uploadLibrary.mutateAsync(f);
+        ok++;
+      } catch (e: any) {
+        toast.error(`${f.name}: ${String(e.message ?? e)}`);
+      }
+    }
+    if (ok) toast.success(`Added ${ok} file${ok > 1 ? 's' : ''} to this project's assets`);
+  };
   const updateElement = useUpdateElement(id);
   const removeElement = useRemoveElement(id);
   const addElementLayer = useAddElementLayer(id);
   const removeElementLayer = useRemoveElementLayer(id);
+
+  // Upload project-specific file(s) straight onto the timeline (top lane, t=0).
+  const onUploadElementFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const layer = Math.max(0, elementLayers - 1);
+    let ok = 0;
+    for (const f of Array.from(files)) {
+      try {
+        await uploadProjectElement.mutateAsync({ file: f, layer, atSec: 0 });
+        ok++;
+      } catch (e: any) {
+        toast.error(`${f.name}: ${String(e.message ?? e)}`);
+      }
+    }
+    if (ok) {
+      toast.success(`Added ${ok} element${ok > 1 ? 's' : ''}`);
+      setElementSheetOpen(false);
+    }
+    if (elementFileRef.current) elementFileRef.current.value = '';
+  };
+
+  // Turn an existing project Asset Library item into a timeline element.
+  const onAddAssetAsElement = (itemId: string) => {
+    placeFromLibrary.mutate(
+      { itemId, layer: Math.max(0, elementLayers - 1), atSec: 0 },
+      {
+        onSuccess: () => {
+          toast.success('Added to timeline');
+          setElementSheetOpen(false);
+        },
+        onError: (e: any) => toast.error(String(e.message ?? e))
+      }
+    );
+  };
   const [elementSheetOpen, setElementSheetOpen] = useState(false);
   const [elementSearch, setElementSearch] = useState('');
   const [audioSheetOpen, setAudioSheetOpen] = useState(false);
@@ -615,6 +686,7 @@ export function VideoEditorPage() {
         selectedElementId={selectedElementId}
         onSelectElement={selectElement}
         onPlaceElement={(elementId, layer, atSec) => placeElement.mutate({ elementId, layer, atSec })}
+        onPlaceFromLibrary={(itemId, layer, atSec) => placeFromLibrary.mutate({ itemId, layer, atSec })}
         onMoveElementTime={moveElementTime}
         onAddElementLayer={() => addElementLayer.mutate()}
         onRemoveElementLayer={(layer) => removeElementLayer.mutate(layer)}
@@ -789,67 +861,227 @@ export function VideoEditorPage() {
 
       {/* Add Elements side sheet */}
       <Sheet open={elementSheetOpen} onOpenChange={setElementSheetOpen}>
-        <SheetContent>
+        <SheetContent
+          onDragEnter={(e) => {
+            e.preventDefault();
+            elDragDepth.current += 1;
+            setElDragOver(true);
+          }}
+          onDragOver={(e) => e.preventDefault()}
+          onDragLeave={() => {
+            elDragDepth.current = Math.max(0, elDragDepth.current - 1);
+            if (elDragDepth.current === 0) setElDragOver(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            elDragDepth.current = 0;
+            setElDragOver(false);
+            onDropToAssets(Array.from(e.dataTransfer.files));
+          }}
+        >
+          {elDragOver && (
+            <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-background/85 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-2 text-center">
+                <Upload className="size-8 text-accent" />
+                <p className="text-sm font-semibold">Drop to add to this project's assets</p>
+                <p className="text-xs text-muted-foreground">Images &amp; videos</p>
+              </div>
+            </div>
+          )}
           <SheetHeader>
             <SheetTitle>Add elements</SheetTitle>
             <SheetDescription>
-              Drag onto an element lane, or click to drop it at the start of the top lane. Manage your
-              library on the Elements page.
+              Drag &amp; drop files here to add them to this project's assets, upload straight onto the
+              timeline, or pick an asset/global element. Manage the global library on the Elements page.
             </SheetDescription>
           </SheetHeader>
+
+          {/* Upload a project-specific file straight onto the timeline. */}
+          <input
+            ref={elementFileRef}
+            type="file"
+            accept="image/*,.gif,video/*"
+            multiple
+            className="hidden"
+            onChange={(e) => onUploadElementFiles(e.target.files)}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            disabled={uploadProjectElement.isPending}
+            onClick={() => elementFileRef.current?.click()}
+          >
+            {uploadProjectElement.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Upload className="size-4" />
+            )}
+            Upload to this project
+          </Button>
+
           <Input
             value={elementSearch}
             onChange={(e) => setElementSearch(e.target.value)}
             placeholder="Search elements…"
             className="h-9"
           />
+
           {(() => {
             const q = elementSearch.trim().toLowerCase();
-            const list = elementLib.filter((el) => !q || el.name.toLowerCase().includes(q));
-            if (list.length === 0) {
-              return (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  {elementLib.length === 0
-                    ? 'No elements yet — upload some on the Elements page.'
-                    : 'No matches.'}
-                </p>
-              );
-            }
+            const projectAssets = (libraryData ?? []).filter(
+              (it) => it.kind !== 'audio' && (!q || it.name.toLowerCase().includes(q))
+            );
+            const globalList = elementLib.filter((el) => !q || el.name.toLowerCase().includes(q));
             return (
-              <div className="grid grid-cols-3 gap-2 overflow-y-auto p-0.5">
-                {list.map((el) => (
-                  <button
-                    key={el.id}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('application/x-element-id', el.id);
-                      e.dataTransfer.effectAllowed = 'copy';
-                      // Close the sheet so the lanes underneath become a drop
-                      // target — deferred so the native drag fully starts first.
-                      setTimeout(() => setElementSheetOpen(false), 0);
-                    }}
-                    onClick={() => {
-                      placeElement.mutate({ elementId: el.id, layer: Math.max(0, elementLayers - 1), atSec: 0 });
-                      setElementSheetOpen(false);
-                    }}
-                    title={`${el.name} — drag onto a lane or click to add`}
-                    className="group relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/30 p-1.5 hover:border-accent/60"
-                  >
-                    {el.kind === 'video' && !el.thumb ? (
-                      <video src={elementUrl(el.file)} muted preload="metadata" className="max-h-full max-w-full object-contain" />
-                    ) : (
-                      <img src={elementUrl(el.thumb || el.file)} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
-                    )}
-                    <span className="absolute left-1 top-1 rounded bg-black/55 px-1 text-[8px] uppercase text-white">
-                      {el.kind}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <Tabs defaultValue="project">
+                <TabsList className="w-full">
+                  <TabsTrigger value="project" className="flex-1">
+                    This project ({projectAssets.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="global" className="flex-1">
+                    Global ({globalList.length})
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* This project's assets → click to add as a timeline element. */}
+                <TabsContent value="project">
+                  {projectAssets.length === 0 ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">
+                      {(libraryData ?? []).some((it) => it.kind !== 'audio')
+                        ? 'No matches.'
+                        : "No images or videos in this project's assets yet — add some in the Assets step."}
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2 overflow-y-auto p-0.5">
+                      {projectAssets.map((it) => (
+                        <button
+                          key={it.id}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('application/x-library-item-id', it.id);
+                            e.dataTransfer.effectAllowed = 'copy';
+                            // Close the sheet so the lanes underneath become a drop target.
+                            setTimeout(() => setElementSheetOpen(false), 0);
+                          }}
+                          onClick={() => onAddAssetAsElement(it.id)}
+                          disabled={placeFromLibrary.isPending}
+                          title={`${it.name} — drag onto a lane or click to add`}
+                          className="group relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/30 p-1.5 hover:border-accent/60 disabled:opacity-60"
+                        >
+                          {it.kind === 'video' ? (
+                            <video src={mediaUrl(id, it.file)} muted preload="metadata" className="max-h-full max-w-full object-contain" />
+                          ) : (
+                            <img src={mediaUrl(id, it.file)} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
+                          )}
+                          <span className="absolute left-1 top-1 rounded bg-black/55 px-1 text-[8px] uppercase text-white">
+                            {it.kind}
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            draggable={false}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewItem({ url: mediaUrl(id, it.file), kind: it.kind, name: it.name });
+                            }}
+                            title="Preview"
+                            className="absolute bottom-1 right-1 hidden rounded bg-black/65 p-1 text-white hover:bg-black/85 group-hover:block"
+                          >
+                            <ArrowUpRight className="size-3" />
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Global element library (drag onto a lane or click to add). */}
+                <TabsContent value="global">
+                  {globalList.length === 0 ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">
+                      {elementLib.length === 0
+                        ? 'No elements yet — upload some on the Elements page.'
+                        : 'No matches.'}
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2 overflow-y-auto p-0.5">
+                      {globalList.map((el) => (
+                        <button
+                          key={el.id}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('application/x-element-id', el.id);
+                            e.dataTransfer.effectAllowed = 'copy';
+                            // Close the sheet so the lanes underneath become a drop
+                            // target — deferred so the native drag fully starts first.
+                            setTimeout(() => setElementSheetOpen(false), 0);
+                          }}
+                          onClick={() => {
+                            placeElement.mutate({ elementId: el.id, layer: Math.max(0, elementLayers - 1), atSec: 0 });
+                            setElementSheetOpen(false);
+                          }}
+                          title={`${el.name} — drag onto a lane or click to add`}
+                          className="group relative flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/30 p-1.5 hover:border-accent/60"
+                        >
+                          {el.kind === 'video' && !el.thumb ? (
+                            <video src={elementUrl(el.file)} muted preload="metadata" className="max-h-full max-w-full object-contain" />
+                          ) : (
+                            <img src={elementUrl(el.thumb || el.file)} alt="" className="max-h-full max-w-full object-contain" loading="lazy" />
+                          )}
+                          <span className="absolute left-1 top-1 rounded bg-black/55 px-1 text-[8px] uppercase text-white">
+                            {el.kind}
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            draggable={false}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewItem({ url: elementUrl(el.file), kind: el.kind, name: el.name });
+                            }}
+                            title="Preview"
+                            className="absolute bottom-1 right-1 hidden rounded bg-black/65 p-1 text-white hover:bg-black/85 group-hover:block"
+                          >
+                            <ArrowUpRight className="size-3" />
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             );
           })()}
         </SheetContent>
       </Sheet>
+
+      {/* Preview an element/asset (the small arrow on each card in the sheet). */}
+      <Dialog open={!!previewItem} onOpenChange={(o) => !o && setPreviewItem(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="truncate pr-6">{previewItem?.name || 'Preview'}</DialogTitle>
+          </DialogHeader>
+          {previewItem && (
+            <div className="flex max-h-[70vh] items-center justify-center overflow-hidden rounded-lg bg-black/90">
+              {previewItem.kind === 'video' ? (
+                <video
+                  src={previewItem.url}
+                  controls
+                  autoPlay
+                  loop
+                  playsInline
+                  className="max-h-[70vh] max-w-full object-contain"
+                />
+              ) : (
+                <img src={previewItem.url} alt={previewItem.name} className="max-h-[70vh] max-w-full object-contain" />
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1142,35 +1374,43 @@ function EditorPreview({
   const sfxRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const lastT = useRef(0);
   const videoElRef = useRef<HTMLVideoElement>(null);
+  const imgElRef = useRef<HTMLImageElement>(null);
   const elVideoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
-  // Fire each placed sound when the playhead crosses its start time.
+  // Imperative-playback refs: the rAF loop is the authoritative clock (`tRef`) and
+  // paints the smooth per-frame visuals (scene transform, scrubber) directly to
+  // the DOM, so playback no longer forces a React re-render on every frame. React
+  // `time` state is updated at a throttled cadence (≈15 Hz) for the structural
+  // bits it owns (which scene base is mounted, caption line, visible elements).
+  const tRef = useRef(0);
+  const lastStateUpdate = useRef(0);
+  const barRef = useRef<HTMLDivElement>(null);
+  const timeTextRef = useRef<HTMLSpanElement>(null);
+  const renderedActiveIdx = useRef(-1);
+  // Live mirrors of props/state read inside the rAF loop (avoids stale closures
+  // while keeping the loop's effect deps minimal).
+  const clipsRef = useRef(clips);
+  clipsRef.current = clips;
+  const totalRef = useRef(total);
+  totalRef.current = total;
+  const elementsRef = useRef(elements);
+  elementsRef.current = elements;
+  const placementsRef = useRef(placements);
+  placementsRef.current = placements;
+  const soundsEnabledRef = useRef(soundsEnabled);
+  soundsEnabledRef.current = soundsEnabled;
+
+  // While paused/scrubbing, keep the sound-firing baseline at the playhead so a
+  // seek doesn't refire past sounds. Firing during playback happens in the rAF
+  // loop (see `fireSounds`).
   useEffect(() => {
-    if (!playing) {
-      lastT.current = time;
-      return;
-    }
-    const prev = lastT.current;
-    lastT.current = time;
-    if (time < prev || !soundsEnabled) return; // wrapped / disabled
-    for (const p of placements) {
-      if (prev <= p.atSec && p.atSec < time) {
-        const el = sfxRefs.current[p.id];
-        if (el) {
-          try {
-            el.currentTime = 0;
-            el.volume = Math.max(0, Math.min(1, p.volume ?? 1));
-            el.play().catch(() => {});
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-    }
-  }, [time, playing, soundsEnabled, placements]);
+    if (!playing) lastT.current = time;
+  }, [time, playing]);
 
   const frameRef = useRef<HTMLDivElement>(null);
   const [frameW, setFrameW] = useState(300);
+  const frameWRef = useRef(frameW);
+  frameWRef.current = frameW;
   useEffect(() => {
     const el = frameRef.current;
     if (!el) return;
@@ -1178,6 +1418,85 @@ function EditorPreview({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // The active clip at timeline position `t` (falls back to the first clip).
+  const clipAt = (t: number) =>
+    clipsRef.current.find((c) => t >= c.start && t < c.start + c.durationSec) ?? clipsRef.current[0];
+
+  // Imperatively paint the smooth, per-frame visuals (scene Ken-Burns transform +
+  // entrance transition + scrubber + time readout) straight to the DOM so the
+  // motion is decoupled from React's throttled re-renders.
+  const paint = (t: number, active: Clip | undefined) => {
+    // Only drive the scene transform when the mounted base matches the active
+    // clip. On the single frame of a cut (before React mounts the new base) we
+    // skip it — the new element's initial style covers that frame.
+    if (active && active.index === renderedActiveIdx.current) {
+      const p = Math.min(1, (t - active.start) / Math.max(0.001, active.durationSec));
+      const kind: 'video' | 'image' = active.visualType === 'Video' ? 'video' : 'image';
+      const fx = effectTransform(active.effect, p, kind, {
+        zoom: active.zoom,
+        intensity: active.intensity,
+        motion: active.motion
+      });
+      const transP = Math.min(1, (t - active.start) / 0.5);
+      const tr = transitionStyle(active.transition, transP, frameWRef.current);
+      const node = active.videoSrc ? videoElRef.current : imgElRef.current;
+      if (node) {
+        node.style.transform = `${tr.transform} ${fx.transform}`.trim();
+        node.style.opacity = String(tr.opacity);
+        if (fx.filter) node.style.filter = fx.filter;
+        else node.style.removeProperty('filter');
+      }
+    }
+    const total = totalRef.current;
+    if (barRef.current) barRef.current.style.width = `${(t / Math.max(0.001, total)) * 100}%`;
+    if (timeTextRef.current) timeTextRef.current.textContent = `${fmt(t)} / ${fmt(total)}`;
+    if (timeRef) timeRef.current = t;
+  };
+
+  // Fire each placed sound when the playhead crosses its start (called per frame).
+  const fireSounds = (t: number) => {
+    const prev = lastT.current;
+    lastT.current = t;
+    if (t < prev || !soundsEnabledRef.current) return; // wrapped / disabled
+    for (const pl of placementsRef.current) {
+      if (prev <= pl.atSec && pl.atSec < t) {
+        const el = sfxRefs.current[pl.id];
+        if (el) {
+          try {
+            el.currentTime = 0;
+            el.volume = Math.max(0, Math.min(1, pl.volume ?? 1));
+            el.play().catch(() => {});
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+  };
+
+  // Keep in-range element <video>s playing on their own media clock during
+  // playback (paused/scrub handling lives in a separate effect below).
+  const syncElementVideos = (t: number) => {
+    for (const el of elementsRef.current) {
+      if (el.kind !== 'video') continue;
+      if (t < el.startSec || t >= el.endSec) continue;
+      const v = elVideoRefs.current[el.id];
+      if (!v) continue;
+      v.muted = !!el.muted;
+      if (v.paused) {
+        const desired = Math.max(0, t - el.startSec);
+        if (Math.abs(v.currentTime - desired) > 0.3) {
+          try {
+            v.currentTime = desired;
+          } catch {
+            /* ignore */
+          }
+        }
+        v.play().catch(() => {});
+      }
+    }
+  };
 
   // Point the audio elements at a given timeline position (music loops).
   const syncAudio = (t: number) => {
@@ -1191,8 +1510,11 @@ function EditorPreview({
   // Seek the transport (used by the scrub bar AND the timeline playhead).
   const seek = (t: number) => {
     const clamped = Math.max(0, Math.min(total, t));
+    tRef.current = clamped;
+    lastT.current = clamped; // don't refire past sounds after a seek
     setTime(clamped);
     syncAudio(clamped);
+    paint(clamped, clipAt(clamped));
     const c = clips.find((x) => clamped >= x.start && clamped < x.start + x.durationSec);
     if (c) onScrubToScene(clips.indexOf(c));
   };
@@ -1232,54 +1554,82 @@ function EditorPreview({
   useEffect(() => {
     if (!playing) return;
     last.current = performance.now();
+    lastStateUpdate.current = last.current;
+    tRef.current = time; // resume from the current playhead
+    lastT.current = time; // don't refire already-passed sounds
     const tick = (now: number) => {
       const dt = (now - last.current) / 1000;
       last.current = now;
-      setTime((t) => {
-        const next = t + dt;
-        if (next >= total) {
-          // Loop: rewind AND replay the audio (it may have ended/paused, in
-          // which case rewinding alone won't resume it).
-          const n = narrRef.current;
-          const mu = musicRef.current;
-          if (n) {
-            n.currentTime = 0;
-            n.play().catch(() => {});
-          }
-          if (mu) {
-            mu.currentTime = 0;
-            mu.play().catch(() => {});
-          }
-          lastT.current = 0; // so placed sound effects fire again next loop
-          return 0;
+      let t = tRef.current + dt;
+      if (t >= totalRef.current) {
+        // Loop: rewind AND replay the audio (it may have ended/paused, in which
+        // case rewinding alone won't resume it).
+        const n = narrRef.current;
+        const mu = musicRef.current;
+        if (n) {
+          n.currentTime = 0;
+          n.play().catch(() => {});
         }
-        return next;
-      });
+        if (mu) {
+          mu.currentTime = 0;
+          mu.play().catch(() => {});
+        }
+        lastT.current = 0; // so placed sound effects fire again next loop
+        t = 0;
+      }
+      tRef.current = t;
+      const active = clipAt(t);
+      fireSounds(t);
+      syncElementVideos(t);
+      paint(t, active); // smooth 60 fps visuals, no React render
+
+      // Update React state at ≈15 Hz for the structural bits it owns — but
+      // immediately at a scene cut so the correct scene base mounts without delay.
+      if ((active?.index ?? -1) !== renderedActiveIdx.current || now - lastStateUpdate.current > 66) {
+        lastStateUpdate.current = now;
+        setTime(t);
+      }
       raf.current = requestAnimationFrame(tick);
     };
     raf.current = requestAnimationFrame(tick);
     return () => {
       if (raf.current) cancelAnimationFrame(raf.current);
     };
-  }, [playing, total]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing]);
 
-  // Which clip is active at `time`.
-  const active = clips.find((c) => time >= c.start && time < c.start + c.durationSec) ?? clips[0];
+  // Which clip is active at `time` (throttled). The rAF loop paints the live
+  // transform every frame; these memoized values are the initial/fallback style
+  // for the mounted scene base and avoid recompute on unrelated re-renders.
+  const active = useMemo(
+    () => clips.find((c) => time >= c.start && time < c.start + c.durationSec) ?? clips[0],
+    [clips, time]
+  );
+  // Mirror which scene base is mounted so the rAF loop knows when a cut needs an
+  // immediate React update (see the throttle check in the tick).
+  renderedActiveIdx.current = active?.index ?? -1;
   const p = active ? Math.min(1, (time - active.start) / Math.max(0.001, active.durationSec)) : 0;
   const activeKind: 'video' | 'image' = active?.visualType === 'Video' ? 'video' : 'image';
-  const fx = active
-    ? effectTransform(active.effect, p, activeKind, {
-        zoom: active.zoom,
-        intensity: active.intensity,
-        motion: active.motion
-      })
-    : { transform: 'none', filter: undefined as string | undefined };
+  const fx = useMemo(
+    () =>
+      active
+        ? effectTransform(active.effect, p, activeKind, {
+            zoom: active.zoom,
+            intensity: active.intensity,
+            motion: active.motion
+          })
+        : { transform: 'none', filter: undefined as string | undefined },
+    [active, p, activeKind]
+  );
   // Entrance transition — mirrors the render (fade / zoom / slide) over a 0.5s
   // window. Combine the transition transform (outer) with the scene's Ken Burns
   // transform (inner), the same nesting the render uses.
   const transP = active ? Math.min(1, (time - active.start) / 0.5) : 1;
-  const tr = active ? transitionStyle(active.transition, transP, frameW) : { opacity: 1, transform: '' };
-  const fxTransform = `${tr.transform} ${fx.transform}`.trim();
+  const tr = useMemo(
+    () => (active ? transitionStyle(active.transition, transP, frameW) : { opacity: 1, transform: '' }),
+    [active, transP, frameW]
+  );
+  const fxTransform = useMemo(() => `${tr.transform} ${fx.transform}`.trim(), [tr, fx]);
   const fadeT = tr.opacity;
 
   // Scrub the preview <video> to match the playhead — only while PAUSED.
@@ -1384,39 +1734,33 @@ function EditorPreview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elResize?.id]);
 
-  const visibleElements = elements
-    .filter((el) => time >= el.startSec && time < el.endSec)
-    .slice()
-    .sort((a, b) => a.layer - b.layer);
+  // Memoized so its identity is stable between unrelated re-renders (it used to be
+  // rebuilt every frame, which re-fired the element-video effect 60×/sec).
+  const visibleElements = useMemo(
+    () =>
+      elements
+        .filter((el) => time >= el.startSec && time < el.endSec)
+        .slice()
+        .sort((a, b) => a.layer - b.layer),
+    [elements, time]
+  );
 
-  // Drive each in-range element <video> from the transport: play (with audio
-  // unless muted) while playing, pause + seek when paused/scrubbing.
+  // While PAUSED/scrubbing, pause + seek in-range element <video>s to the
+  // playhead. During playback the rAF loop drives them (see `syncElementVideos`).
   useEffect(() => {
+    if (playing) return;
     for (const el of visibleElements) {
       if (el.kind !== 'video') continue;
       const v = elVideoRefs.current[el.id];
       if (!v) continue;
       v.muted = !!el.muted;
+      if (!v.paused) v.pause();
       const desired = Math.max(0, time - el.startSec);
-      if (playing) {
-        if (v.paused) {
-          if (Math.abs(v.currentTime - desired) > 0.3) {
-            try {
-              v.currentTime = desired;
-            } catch {
-              /* ignore */
-            }
-          }
-          v.play().catch(() => {});
-        }
-      } else {
-        if (!v.paused) v.pause();
-        if (Math.abs(v.currentTime - desired) > 0.05) {
-          try {
-            v.currentTime = desired;
-          } catch {
-            /* ignore */
-          }
+      if (Math.abs(v.currentTime - desired) > 0.05) {
+        try {
+          v.currentTime = desired;
+        } catch {
+          /* ignore */
         }
       }
     }
@@ -1440,15 +1784,16 @@ function EditorPreview({
                 playsInline
                 preload="auto"
                 className="size-full object-cover"
-                style={{ transform: fxTransform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
+                style={{ transform: fxTransform, filter: fx.filter, opacity: fadeT }}
               />
             ) : (
               <img
                 key={active.index}
+                ref={imgElRef}
                 src={active.thumb}
                 alt=""
                 className="size-full object-cover"
-                style={{ transform: fxTransform, filter: fx.filter, opacity: fadeT, transition: 'opacity 80ms linear' }}
+                style={{ transform: fxTransform, filter: fx.filter, opacity: fadeT }}
               />
             ))}
           {/* Element overlays (below captions). Selected one is draggable. */}
@@ -1590,9 +1935,9 @@ function EditorPreview({
             seek(frac * total);
           }}
         >
-          <div className="h-full rounded-full bg-accent" style={{ width: `${(time / Math.max(0.001, total)) * 100}%` }} />
+          <div ref={barRef} className="h-full rounded-full bg-accent" style={{ width: `${(time / Math.max(0.001, total)) * 100}%` }} />
         </div>
-        <span className="text-[11px] tabular-nums text-muted-foreground">
+        <span ref={timeTextRef} className="text-[11px] tabular-nums text-muted-foreground">
           {fmt(time)} / {fmt(total)}
         </span>
       </div>
@@ -1826,6 +2171,7 @@ function Timeline({
   selectedElementId,
   onSelectElement,
   onPlaceElement,
+  onPlaceFromLibrary,
   onMoveElementTime,
   onAddElementLayer,
   onRemoveElementLayer,
@@ -1853,6 +2199,7 @@ function Timeline({
   selectedElementId: string | null;
   onSelectElement: (id: string | null) => void;
   onPlaceElement: (elementId: string, layer: number, atSec: number) => void;
+  onPlaceFromLibrary: (itemId: string, layer: number, atSec: number) => void;
   onMoveElementTime: (placementId: string, atSec: number) => void;
   onAddElementLayer: () => void;
   onRemoveElementLayer: (layer: number) => void;
@@ -2077,12 +2424,22 @@ function Timeline({
                     <div
                       key={layer}
                       onDragOver={(e) => {
-                        if (e.dataTransfer.types.includes('application/x-element-id')) e.preventDefault();
+                        const t = e.dataTransfer.types;
+                        if (
+                          t.includes('application/x-element-id') ||
+                          t.includes('application/x-library-item-id')
+                        )
+                          e.preventDefault();
                       }}
                       onDrop={(e) => {
                         e.preventDefault();
                         const eid = e.dataTransfer.getData('application/x-element-id');
-                        if (eid) onPlaceElement(eid, layer, xToSec(e.clientX));
+                        if (eid) {
+                          onPlaceElement(eid, layer, xToSec(e.clientX));
+                          return;
+                        }
+                        const lid = e.dataTransfer.getData('application/x-library-item-id');
+                        if (lid) onPlaceFromLibrary(lid, layer, xToSec(e.clientX));
                       }}
                       className="relative overflow-hidden rounded-md border border-dashed border-border/60 bg-muted/20"
                       style={{ height: TL_ELEM_LANE_H }}

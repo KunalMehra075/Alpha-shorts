@@ -7,6 +7,7 @@ import {
   Mic,
   Pause,
   Play,
+  Search,
   Sparkles,
   Trash2,
   Upload
@@ -15,6 +16,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { TabHeader } from '@/components/TabHeader';
@@ -43,6 +45,7 @@ export function AudioPage() {
   const uploadMut = useUploadAudio(id);
 
   const [voiceId, setVoiceId] = useState('');
+  const [voiceSearch, setVoiceSearch] = useState('');
   const [stability, setStability] = useState(50);
   const [similarity, setSimilarity] = useState(75);
   const [speedPct, setSpeedPct] = useState(100); // 100–200 → 1.00x–2.00x
@@ -63,6 +66,14 @@ export function AudioPage() {
 
   const versions = audio?.versions ?? [];
   const current = versions.find((v) => v.version === audio?.currentVersion) ?? null;
+
+  // Filter the voice list by name, language, accent, gender, or tagline.
+  const vq = voiceSearch.trim().toLowerCase();
+  const filteredVoices = (voices ?? []).filter(
+    (v) =>
+      !vq ||
+      `${v.name} ${v.language} ${v.accent} ${v.gender} ${v.tagline}`.toLowerCase().includes(vq)
+  );
 
   const runGenerate = async () => {
     if (!hasScript) return toast.error('Generate a script first.');
@@ -128,34 +139,51 @@ export function AudioPage() {
 
           <Card>
             <CardContent className="flex flex-col gap-3 p-5">
-              <Label>Voice</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>Voice</Label>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={voiceSearch}
+                    onChange={(e) => setVoiceSearch(e.target.value)}
+                    placeholder="Search voices…"
+                    className="h-8 w-44 pl-8"
+                  />
+                </div>
+              </div>
               <div className="grid gap-2">
-                {(voices ?? []).map((v) => (
-                  <button
-                    key={v.id}
-                    onClick={() => setVoiceId(v.id)}
-                    className={cn(
-                      'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
-                      voiceId === v.id ? 'border-accent/50 bg-accent/10' : 'border-border hover:bg-muted'
-                    )}
-                  >
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted">
-                      <Mic className="size-4 text-muted-foreground" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className="truncate text-sm font-semibold">{v.name}</span>
-                        <Badge variant="outline" className="uppercase">
-                          {v.language}
-                        </Badge>
+                {filteredVoices.length === 0 ? (
+                  <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                    No voices match “{voiceSearch}”.
+                  </p>
+                ) : (
+                  filteredVoices.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => setVoiceId(v.id)}
+                      className={cn(
+                        'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                        voiceId === v.id ? 'border-accent/50 bg-accent/10' : 'border-border hover:bg-muted'
+                      )}
+                    >
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted">
+                        <Mic className="size-4 text-muted-foreground" />
                       </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {v.tagline || `${v.accent} · ${v.gender}`}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="truncate text-sm font-semibold">{v.name}</span>
+                          <Badge variant="outline" className="uppercase">
+                            {v.language}
+                          </Badge>
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {v.tagline || `${v.accent} · ${v.gender}`}
+                        </span>
                       </span>
-                    </span>
-                    {voiceId === v.id && <Check className="size-4 shrink-0 text-accent" />}
-                  </button>
-                ))}
+                      {voiceId === v.id && <Check className="size-4 shrink-0 text-accent" />}
+                    </button>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>

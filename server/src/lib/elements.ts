@@ -6,7 +6,7 @@ import { customAlphabet } from 'nanoid';
 import { getDuration } from '../../../src/lib/ffmpeg.js';
 import { ensureDir, existsSync, readJsonOr, removePath, writeJson } from './fsx';
 import { ROOT, projectDir } from './paths';
-import { HttpError, addElementPlacement, elementsDir as wsElementsDir } from './store';
+import { HttpError, addElementPlacement, elementsDir as wsElementsDir, getLibrary } from './store';
 
 const shortId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 10);
 const FFMPEG_BIN = process.env.FFMPEG_BIN || 'ffmpeg';
@@ -175,6 +175,82 @@ export function placeElement(opts: { id: string; elementId: string; layer: numbe
   };
   addElementPlacement(id, rec);
   return rec;
+}
+
+// Build the placement record (probe duration, apply the same defaults as
+// placeElement) and store it on the manifest. Shared by the project-element
+// creation paths below. `abs` is the already-written file's absolute path.
+async function addPlacedElement(
+  id: string,
+  opts: { pid: string; name: string; rel: string; kind: ElementKind; abs: string; layer: number; atSec: number }
+) {
+  const { pid, name, rel, kind, abs, layer, atSec } = opts;
+  const durationSec = kind === 'image' ? 0 : await probe(abs);
+  const at = Math.max(0, Math.round(atSec * 100) / 100);
+  const span = kind !== 'image' && durationSec > 0 ? durationSec : 3;
+  const rec = {
+    id: pid,
+    name,
+    file: rel,
+    kind,
+    layer: Math.max(0, Math.round(layer)),
+    x: 50,
+    y: 50,
+    size: 50,
+    rotation: 0,
+    startSec: at,
+    endSec: Math.round((at + span) * 100) / 100,
+    animation: 'none' as const,
+    muted: false
+  };
+  addElementPlacement(id, rec);
+  return rec;
+}
+
+// Place a project-specific uploaded file directly onto this project's timeline
+// (no global-library entry). Mirrors placeElement's defaults.
+export async function placeUploadedElement(opts: {
+  id: string;
+  buffer: Buffer;
+  originalName: string;
+  layer: number;
+  atSec: number;
+}) {
+  const { id, buffer, originalName, layer, atSec } = opts;
+  if (!buffer?.length) throw new HttpError(400, 'Empty upload.');
+  const kind = kindOf(originalName);
+  if (!kind) {
+    throw new HttpError(400, `"${originalName}" isn't a supported element — use an image, gif, or video.`);
+  }
+  ensureDir(wsElementsDir(id));
+  const pid = shortId();
+  const ext = (originalName.match(/\.[A-Za-z0-9]+$/)?.[0] || '').toLowerCase();
+  const rel = `elements/${pid}${ext}`;
+  const abs = join(projectDir(id), rel);
+  writeFileSync(abs, buffer);
+  return addPlacedElement(id, { pid, name: originalName, rel, kind, abs, layer, atSec });
+}
+
+// Turn an existing project Asset Library item into a timeline element
+// (copy-on-place from the project's library/ folder). Audio is rejected.
+export async function placeLibraryItemAsElement(opts: {
+  id: string;
+  itemId: string;
+  layer: number;
+  atSec: number;
+}) {
+  const { id, itemId, layer, atSec } = opts;
+  const item = getLibrary(id).find((i) => i.id === itemId);
+  if (!item) throw new HttpError(404, `Library item "${itemId}" not found.`);
+  if (item.kind === 'audio') throw new HttpError(400, "Audio can't be used as a visual element.");
+  const kind = kindOf(item.file) ?? (item.kind === 'video' ? 'video' : 'image');
+  ensureDir(wsElementsDir(id));
+  const pid = shortId();
+  const ext = extname(item.file) || '';
+  const rel = `elements/${pid}${ext}`;
+  const abs = join(projectDir(id), rel);
+  copyFileSync(join(projectDir(id), item.file), abs);
+  return addPlacedElement(id, { pid, name: item.name, rel, kind, abs, layer, atSec });
 }
 
 // ── Background removal (chroma key) on the GLOBAL library ──────────────────────

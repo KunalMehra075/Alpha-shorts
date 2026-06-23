@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, Clock, FilmIcon, LayoutGrid, Plus, Table as TableIcon } from 'lucide-react';
+import { CheckCircle2, Clock, FilmIcon, LayoutGrid, Plus, Search, Table as TableIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { StatCard } from '@/components/StatCard';
 import {
   CreateDialog,
@@ -25,6 +26,7 @@ export function ProjectsPage() {
   const { data: projects, isLoading } = useProjects();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
   const [view, setView] = useState<View>(() => {
@@ -49,6 +51,14 @@ export function ProjectsPage() {
     return { total: list.length, completed, pending: list.length - completed };
   }, [projects]);
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return projects ?? [];
+    return (projects ?? []).filter(
+      (w) => w.name.toLowerCase().includes(q) || w.language.toLowerCase().includes(q)
+    );
+  }, [projects, search]);
+
   const open = (id: string) => navigate(`/w/${id}/script`);
 
   return (
@@ -72,11 +82,22 @@ export function ProjectsPage() {
       </div>
 
       {/* Toolbar */}
-      <div className="mb-4 mt-9 flex items-center justify-between">
+      <div className="mb-4 mt-9 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold">All projects</h2>
-        <div className="inline-flex items-center rounded-lg border border-border p-0.5">
-          <ViewButton active={view === 'table'} onClick={() => setView('table')} icon={<TableIcon className="size-4" />} label="Table" />
-          <ViewButton active={view === 'card'} onClick={() => setView('card')} icon={<LayoutGrid className="size-4" />} label="Cards" />
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search projects…"
+              className="h-9 w-56 pl-8"
+            />
+          </div>
+          <div className="inline-flex items-center rounded-lg border border-border p-0.5">
+            <ViewButton active={view === 'table'} onClick={() => setView('table')} icon={<TableIcon className="size-4" />} label="Table" />
+            <ViewButton active={view === 'card'} onClick={() => setView('card')} icon={<LayoutGrid className="size-4" />} label="Cards" />
+          </div>
         </div>
       </div>
 
@@ -89,9 +110,13 @@ export function ProjectsPage() {
         </div>
       ) : (projects?.length ?? 0) === 0 ? (
         <EmptyState onCreate={() => setCreateOpen(true)} />
+      ) : filtered.length === 0 ? (
+        <p className="rounded-lg bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+          No projects match “{search}”.
+        </p>
       ) : view === 'card' ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects!.map((w) => (
+          {filtered.map((w) => (
             <ProjectCard
               key={w.id}
               w={w}
@@ -103,7 +128,7 @@ export function ProjectsPage() {
         </div>
       ) : (
         <ProjectTable
-          rows={projects!}
+          rows={filtered}
           onOpen={open}
           onRename={setRenameTarget}
           onDelete={setDeleteTarget}

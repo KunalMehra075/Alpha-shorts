@@ -1051,6 +1051,7 @@ function AssetLibrary({
   const [globalOpen, setGlobalOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
   const [genPrompt, setGenPrompt] = useState('');
+  const [search, setSearch] = useState('');
   const genLib = useGenerateLibraryImage(id);
   const { data: imageGen } = useImageGenStatus();
   const generate = async () => {
@@ -1064,9 +1065,11 @@ function AssetLibrary({
       toast.error(String(e.message ?? e));
     }
   };
-  const images = items.filter((i) => i.kind === 'image');
-  const videos = items.filter((i) => i.kind === 'video');
-  const audios = items.filter((i) => i.kind === 'audio');
+  const q = search.trim().toLowerCase();
+  const match = (i: LibraryItem) => !q || i.name.toLowerCase().includes(q);
+  const images = items.filter((i) => i.kind === 'image' && match(i));
+  const videos = items.filter((i) => i.kind === 'video' && match(i));
+  const audios = items.filter((i) => i.kind === 'audio' && match(i));
 
   const MediaCard = ({ item }: { item: LibraryItem }) => {
     const url = `/media/${id}/${item.file}`;
@@ -1102,7 +1105,7 @@ function AssetLibrary({
   const Grid = ({ list }: { list: LibraryItem[] }) =>
     list.length === 0 ? (
       <p className="py-6 text-center text-sm text-muted-foreground">
-        Nothing here yet — drag &amp; drop media, or use Add media.
+        {q ? `No media matches “${search}”.` : 'Nothing here yet — drag & drop media, or use Add media.'}
       </p>
     ) : (
       <div className="grid grid-cols-6 gap-2 sm:grid-cols-8">
@@ -1115,8 +1118,19 @@ function AssetLibrary({
   return (
     <Card className="mt-5">
       <CardContent className="p-5">
-        <div className="mb-1 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Asset Library</h3>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <h3 className="text-sm font-semibold">Asset Library</h3>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search library…"
+                className="h-8 w-44 pl-8"
+              />
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setGenOpen(true)}>
               <Sparkles className="size-4" /> Generate with AI

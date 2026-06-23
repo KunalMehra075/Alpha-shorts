@@ -15,7 +15,7 @@ import {
   updateSoundPlacement
 } from '../lib/store';
 import { placeSound } from '../lib/sounds';
-import { placeElement } from '../lib/elements';
+import { placeElement, placeLibraryItemAsElement, placeUploadedElement } from '../lib/elements';
 import {
   clearMusic,
   getRenderStatus,
@@ -29,6 +29,8 @@ import {
 export const videoRouter = Router({ mergeParams: true });
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
+// Project-specific element uploads can be full-length videos — allow up to 100 MB.
+const elementUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
 const pid = (req: any) => req.params.id as string;
 
@@ -67,6 +69,11 @@ const PlacementPatch = z.object({
 
 const ElementPlaceBody = z.object({
   elementId: z.string().min(1),
+  layer: z.number().int().min(0).default(0),
+  atSec: z.number().min(0).default(0)
+});
+const ElementFromLibraryBody = z.object({
+  itemId: z.string().min(1),
   layer: z.number().int().min(0).default(0),
   atSec: z.number().min(0).default(0)
 });
@@ -188,6 +195,36 @@ videoRouter.post(
     res
       .status(201)
       .json(placeElement({ id: pid(req), elementId: body.elementId, layer: body.layer, atSec: body.atSec }));
+  })
+);
+
+// POST a project-specific file straight onto the timeline (multipart field
+// "file"). Skips the global Elements library entirely.
+videoRouter.post(
+  '/elements/upload',
+  elementUpload.single('file'),
+  ah(async (req, res) => {
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file) {
+      res.status(400).json({ error: 'No file uploaded (field "file").' });
+      return;
+    }
+    const layer = Number(req.body?.layer) || 0;
+    const atSec = Number(req.body?.atSec) || 0;
+    res
+      .status(201)
+      .json(await placeUploadedElement({ id: pid(req), buffer: file.buffer, originalName: file.originalname, layer, atSec }));
+  })
+);
+
+// POST turn an existing project Asset Library item into a timeline element.
+videoRouter.post(
+  '/elements/from-library',
+  ah(async (req, res) => {
+    const body = ElementFromLibraryBody.parse(req.body);
+    res
+      .status(201)
+      .json(await placeLibraryItemAsElement({ id: pid(req), itemId: body.itemId, layer: body.layer, atSec: body.atSec }));
   })
 );
 

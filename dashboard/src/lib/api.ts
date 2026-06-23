@@ -304,6 +304,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ elementId, layer, atSec })
     }),
+  // Upload a project-specific file straight onto the timeline (no global library).
+  uploadElementToProject: async (id: string, file: File, layer: number, atSec: number) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('layer', String(layer));
+    fd.append('atSec', String(atSec));
+    const res = await fetch(`/api/projects/${id}/video/elements/upload`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const b = await res.json();
+        if (b?.error) msg = b.error;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg);
+    }
+    return res.json() as Promise<ElementPlacement>;
+  },
+  // Turn an existing project Asset Library item into a timeline element.
+  placeElementFromLibrary: (id: string, itemId: string, layer: number, atSec: number) =>
+    request<ElementPlacement>(`/projects/${id}/video/elements/from-library`, {
+      method: 'POST',
+      body: JSON.stringify({ itemId, layer, atSec })
+    }),
   updateElement: (id: string, placementId: string, patch: Partial<Omit<ElementPlacement, 'id' | 'name' | 'file' | 'kind'>>) =>
     request<ElementPlacement[]>(`/projects/${id}/video/elements/${placementId}`, {
       method: 'PUT',

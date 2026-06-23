@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Eraser, Loader2, MoreVertical, Pencil, Pipette, Shapes, Trash2, Upload } from 'lucide-react';
+import { Eraser, Loader2, MoreVertical, Pencil, Pipette, Search, Shapes, Trash2, Upload, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -46,11 +46,23 @@ export function ElementsPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [bgFor, setBgFor] = useState<ElementItem | null>(null);
   const [renameFor, setRenameFor] = useState<ElementItem | null>(null);
+  const [previewFor, setPreviewFor] = useState<ElementItem | null>(null);
+  const [search, setSearch] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const dragDepth = useRef(0);
 
-  const onFiles = async (files: FileList | null) => {
-    if (!files?.length) return;
+  const uploadFiles = async (files: File[]) => {
+    // Accept anything the element library supports (image/gif/video). Match by
+    // MIME first, then fall back to extension for types the OS doesn't tag.
+    const media = files.filter(
+      (f) => /^(image|video)\//.test(f.type) || /\.(gif|svg|avif|webp|mp4|mov|webm|mkv|m4v)$/i.test(f.name)
+    );
+    if (!media.length) {
+      toast.error('Drop an image, gif, or video to add an element.');
+      return;
+    }
     let ok = 0;
-    for (const f of Array.from(files)) {
+    for (const f of media) {
       try {
         await upload.mutateAsync(f);
         ok++;
@@ -58,31 +70,80 @@ export function ElementsPage() {
         toast.error(`${f.name}: ${String(e.message ?? e)}`);
       }
     }
-    if (ok) toast.success(`Uploaded ${ok} element${ok > 1 ? 's' : ''}`);
+    if (ok) toast.success(`Added ${ok} element${ok > 1 ? 's' : ''}`);
+  };
+
+  const onFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    await uploadFiles(Array.from(files));
     if (inputRef.current) inputRef.current.value = '';
   };
 
+  const q = search.trim().toLowerCase();
+  const filtered = (items ?? []).filter((el) => !q || el.name.toLowerCase().includes(q));
+
   return (
-    <div className="mx-auto max-w-7xl px-8 py-8">
+    <div
+      className="relative mx-auto max-w-7xl px-8 py-8"
+      onDragEnter={(e) => {
+        e.preventDefault();
+        dragDepth.current += 1;
+        setDragOver(true);
+      }}
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragOver(false);
+        uploadFiles(Array.from(e.dataTransfer.files));
+      }}
+    >
+      {dragOver && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-accent bg-card px-10 py-8 text-center">
+            <UploadCloud className="size-8 text-accent" />
+            <p className="text-sm font-semibold">Drop to add as elements</p>
+            <p className="text-xs text-muted-foreground">Images, gifs, and videos</p>
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight">Elements</h1>
           <p className="mt-1 text-muted-foreground">
-            Reusable overlays — arrows, icons, badges, subscribe gifs. Use the ⋮ menu to remove a
-            green-screen background, then drop them onto any project's timeline.
+            Reusable overlays — arrows, icons, badges, subscribe gifs. Drag &amp; drop files here to add
+            them, use the ⋮ menu to remove a green-screen background, then drop them onto any project's
+            timeline.
           </p>
         </div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*,.gif,video/*"
-          multiple
-          className="hidden"
-          onChange={(e) => onFiles(e.target.files)}
-        />
-        <Button variant="secondary" size="sm" onClick={() => inputRef.current?.click()} disabled={upload.isPending}>
-          <Upload className="size-4" /> Upload element
-        </Button>
+        <div className="flex items-center gap-2">
+          {(items?.length ?? 0) > 0 && (
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search elements…"
+                className="h-9 w-48 pl-8"
+              />
+            </div>
+          )}
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*,.gif,video/*"
+            multiple
+            className="hidden"
+            onChange={(e) => onFiles(e.target.files)}
+          />
+          <Button variant="secondary" size="sm" onClick={() => inputRef.current?.click()} disabled={upload.isPending}>
+            <Upload className="size-4" /> Upload element
+          </Button>
+        </div>
       </div>
 
       <div className="mt-6">
@@ -90,15 +151,20 @@ export function ElementsPage() {
           <GridSkeleton />
         ) : (items?.length ?? 0) === 0 ? (
           <EmptyState onUpload={() => inputRef.current?.click()} />
+        ) : filtered.length === 0 ? (
+          <p className="rounded-lg bg-muted/40 p-6 text-center text-sm text-muted-foreground">
+            No elements match “{search}”.
+          </p>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-            {items!.map((el) => (
+            {filtered.map((el) => (
               <ElementCard
                 key={el.id}
                 el={el}
                 onDelete={() => del.mutate(el.id)}
                 onRemoveBg={() => setBgFor(el)}
                 onRename={() => setRenameFor(el)}
+                onPreview={() => setPreviewFor(el)}
               />
             ))}
           </div>
@@ -107,7 +173,37 @@ export function ElementsPage() {
 
       {bgFor && <RemoveBackgroundModal element={bgFor} onClose={() => setBgFor(null)} />}
       {renameFor && <RenameDialog element={renameFor} onClose={() => setRenameFor(null)} />}
+      {previewFor && <PreviewDialog element={previewFor} onClose={() => setPreviewFor(null)} />}
     </div>
+  );
+}
+
+function PreviewDialog({ element, onClose }: { element: ElementItem; onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="truncate pr-6">{element.name}</DialogTitle>
+        </DialogHeader>
+        <div className="flex max-h-[70vh] items-center justify-center overflow-hidden rounded-lg" style={CHECKER}>
+          {element.kind === 'video' ? (
+            <video
+              src={elementUrl(element.file)}
+              controls
+              autoPlay
+              loop
+              playsInline
+              className="max-h-[70vh] max-w-full object-contain"
+            />
+          ) : (
+            <img src={elementUrl(element.file)} alt={element.name} className="max-h-[70vh] max-w-full object-contain" />
+          )}
+        </div>
+        <p className="text-center text-xs text-muted-foreground">
+          {element.kind} · {formatBytes(element.sizeBytes)}
+        </p>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -154,12 +250,14 @@ function ElementCard({
   el,
   onDelete,
   onRemoveBg,
-  onRename
+  onRename,
+  onPreview
 }: {
   el: ElementItem;
   onDelete: () => void;
   onRemoveBg: () => void;
   onRename: () => void;
+  onPreview: () => void;
 }) {
   // Videos show their middle-frame poster, and play (with sound) on hover.
   const poster = el.thumb ? elementUrl(el.thumb) : undefined;
@@ -180,8 +278,10 @@ function ElementCard({
   return (
     <Card className="group overflow-hidden">
       <div
-        className="relative flex aspect-square w-full items-center justify-center p-3"
+        className="relative flex aspect-square w-full cursor-pointer items-center justify-center p-3"
         style={CHECKER}
+        onClick={onPreview}
+        title="Click to preview"
         onMouseEnter={el.kind === 'video' ? onEnter : undefined}
         onMouseLeave={el.kind === 'video' ? onLeave : undefined}
       >
@@ -205,6 +305,7 @@ function ElementCard({
           <DropdownMenuTrigger asChild>
             <button
               title="Options"
+              onClick={(e) => e.stopPropagation()}
               className="absolute right-1.5 top-1.5 hidden size-7 items-center justify-center rounded-md bg-background/80 text-foreground backdrop-blur group-hover:flex data-[state=open]:flex hover:bg-background"
             >
               <MoreVertical className="size-4" />

@@ -390,6 +390,30 @@ export function usePlaceElement(id: string) {
   });
 }
 
+export function useUploadProjectElement(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, layer, atSec }: { file: File; layer: number; atSec: number }) =>
+      api.uploadElementToProject(id, file, layer, atSec),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-elements', id] });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+    }
+  });
+}
+
+export function usePlaceElementFromLibrary(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, layer, atSec }: { itemId: string; layer: number; atSec: number }) =>
+      api.placeElementFromLibrary(id, itemId, layer, atSec),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-elements', id] });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+    }
+  });
+}
+
 export function useUpdateElement(id: string) {
   const qc = useQueryClient();
   return useMutation({
