@@ -100,6 +100,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
+  uploadScript: (
+    id: string,
+    payload: { voiceoverScript: string; topic?: string; language?: Language }
+  ) =>
+    request<ScriptVersion>(`/projects/${id}/script/upload`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }),
   listScriptVersions: (id: string) =>
     request<ScriptVersionMeta[]>(`/projects/${id}/script/versions`),
   restoreScript: (id: string, version: number) =>

@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   Check,
+  FileUp,
   History,
   Loader2,
   RotateCcw,
   Save,
   Sparkles,
+  Upload,
   Wand2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -35,9 +37,11 @@ import {
   useSaveScript,
   useScript,
   useScriptVersions,
-  useTemplates
+  useTemplates,
+  useUploadScript
 } from '@/lib/queries';
 import { useProjectCtx } from '@/layouts/ProjectLayout';
+import type { Language } from '@/lib/types';
 
 export function ScriptPage() {
   const { project, id } = useProjectCtx();
@@ -46,6 +50,7 @@ export function ScriptPage() {
 
   const generate = useGenerateScript(id);
   const save = useSaveScript(id);
+  const upload = useUploadScript(id);
   const { data: templates } = useTemplates();
 
   const [prompt, setPrompt] = useState('');
@@ -55,6 +60,11 @@ export function ScriptPage() {
   const [savedFlash, setSavedFlash] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveTplOpen, setSaveTplOpen] = useState(false);
+
+  // Upload-your-own-script state.
+  const [uploadText, setUploadText] = useState('');
+  const [uploadLang, setUploadLang] = useState<Language>(project.language);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // Load draft from server whenever the active version changes.
   useEffect(() => {
@@ -96,6 +106,31 @@ export function ScriptPage() {
       );
     } catch (e: any) {
       toast.error(String(e.message ?? e));
+    }
+  };
+
+  const runUpload = async () => {
+    const text = uploadText.trim();
+    if (!text) return;
+    try {
+      const sv = await upload.mutateAsync({ voiceoverScript: text, topic, language: uploadLang });
+      setUploadText('');
+      toast.success(`Script uploaded (Version ${sv.version})`);
+    } catch (e: any) {
+      toast.error(String(e.message ?? e));
+    }
+  };
+
+  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setUploadText(text);
+      toast.success(`Loaded "${file.name}"`);
+    } catch (err: any) {
+      toast.error(`Could not read file: ${err.message ?? err}`);
     }
   };
 
@@ -213,6 +248,69 @@ export function ScriptPage() {
               </Button>
               <p className="text-center text-xs text-muted-foreground">
                 Uses DeepSeek, then OpenAI. Each run saves a new version.
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Upload your own script (Hindi or English) — skips the AI. */}
+          <Card>
+            <CardContent className="flex flex-col gap-4 p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Upload className="size-4 text-muted-foreground" />
+                  <Label>Use your own script</Label>
+                </div>
+                <Select
+                  className="h-8 w-28 text-xs"
+                  value={uploadLang}
+                  onChange={(e) => setUploadLang(e.target.value as Language)}
+                >
+                  <option value="en">English</option>
+                  <option value="hi">Hindi</option>
+                  <option value="bilingual">Bilingual</option>
+                </Select>
+              </div>
+              <Textarea
+                value={uploadText}
+                onChange={(e) => setUploadText(e.target.value)}
+                placeholder="Paste your own narration script here (Hindi or English)…"
+                className="min-h-[160px] text-[13px] leading-relaxed"
+              />
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".txt,text/plain"
+                className="hidden"
+                onChange={onPickFile}
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <FileUp className="size-4" /> Load .txt
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={runUpload}
+                  disabled={!uploadText.trim() || upload.isPending}
+                >
+                  {upload.isPending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" /> Uploading…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="size-4" /> Use this script
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-center text-xs text-muted-foreground">
+                Saves a new version (no AI). The language is applied to this project.
               </p>
             </CardContent>
           </Card>

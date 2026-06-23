@@ -113,6 +113,18 @@ export function useGenerateScript(id: string) {
   });
 }
 
+export function useUploadScript(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { voiceoverScript: string; topic?: string; language?: Language }) =>
+      api.uploadScript(id, payload),
+    onSuccess: (sv) => {
+      qc.setQueryData(qk.script(id), sv);
+      invalidateScript(qc, id);
+    }
+  });
+}
+
 export function useSaveScript(id: string) {
   const qc = useQueryClient();
   return useMutation({

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { ah } from '../lib/async';
-import { Scene } from '../lib/schema';
+import { Language, Scene } from '../lib/schema';
 import { defaultScriptGenerator } from '../lib/llm';
 import {
   addScriptVersion,
@@ -10,7 +10,8 @@ import {
   listScriptVersions,
   readManifest,
   restoreScriptVersion,
-  saveCurrentScript
+  saveCurrentScript,
+  updateProject
 } from '../lib/store';
 
 // mergeParams lets us read :id from the parent /projects/:id mount.
@@ -33,6 +34,12 @@ const SaveBody = z.object({
 });
 
 const RestoreBody = z.object({ version: z.number().int() });
+
+const UploadBody = z.object({
+  voiceoverScript: z.string().trim().min(1, 'Script cannot be empty.'),
+  topic: z.string().default(''),
+  language: Language.optional()
+});
 
 // GET current script (null if none yet)
 scriptRouter.get(
@@ -73,6 +80,30 @@ scriptRouter.post(
       scenes: [], // breakdown now happens in the Assets step (manifest.scenes)
       provider: result.provider,
       mock: result.mock
+    });
+    res.status(201).json(sv);
+  })
+);
+
+// POST upload -> new version from user-provided text (no LLM). The optional
+// language updates the project so downstream steps (breakdown/SEO/TTS) match the
+// script's language (e.g. a Hindi script in an English project).
+scriptRouter.post(
+  '/upload',
+  ah((req, res) => {
+    const id = (req.params as any).id;
+    readManifest(id); // 404 if project missing
+    const body = UploadBody.parse(req.body);
+
+    if (body.language) updateProject(id, { language: body.language });
+
+    const sv = addScriptVersion(id, {
+      topic: body.topic,
+      promptUsed: '',
+      voiceoverScript: body.voiceoverScript.trim(),
+      scenes: [], // breakdown happens in the Assets step (manifest.scenes)
+      provider: 'manual',
+      mock: false
     });
     res.status(201).json(sv);
   })
