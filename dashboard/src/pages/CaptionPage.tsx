@@ -39,6 +39,21 @@ import type { CaptionLine, CaptionMedia, CaptionSettings, Language } from '@/lib
 
 const FONTS = ['Inter', 'Arial', 'Impact', 'Montserrat', 'Poppins', 'Bebas Neue', 'Noto Sans Devanagari'];
 
+const ANIMATIONS: { value: CaptionSettings['animationStyle']; label: string }[] = [
+  { value: 'pop', label: 'Pop' },
+  { value: 'fade', label: 'Fade in' },
+  { value: 'slide', label: 'Slide up' },
+  { value: 'none', label: 'None' }
+];
+
+// CSS animation shorthand for the live preview, keyed by animation style.
+const ANIM_CSS: Record<CaptionSettings['animationStyle'], string> = {
+  pop: 'cap-pop .42s cubic-bezier(.2,.8,.2,1) both',
+  fade: 'cap-fade .3s ease both',
+  slide: 'cap-slide .4s ease both',
+  none: 'none'
+};
+
 export function CaptionPage() {
   const { project, id } = useProjectCtx();
   const { data: caps } = useCaptions(id);
@@ -268,6 +283,22 @@ export function CaptionPage() {
                   {[2, 3, 4, 5].map((n) => (
                     <option key={n} value={n}>
                       {n} {n === 2 ? '(punchy)' : n === 5 ? '(dense)' : ''}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              <div className="grid gap-1.5">
+                <Label>Animation</Label>
+                <Select
+                  value={settings.animationStyle ?? 'pop'}
+                  onChange={(e) =>
+                    patch({ animationStyle: e.target.value as CaptionSettings['animationStyle'] })
+                  }
+                >
+                  {ANIMATIONS.map((a) => (
+                    <option key={a.value} value={a.value}>
+                      {a.label}
                     </option>
                   ))}
                 </Select>
@@ -543,6 +574,16 @@ function CaptionPreview({
     return () => clearInterval(t);
   }, [mode, words.length]);
 
+  // Re-run the enter animation periodically so the user sees the chosen style.
+  // `cycle` is used as a React key on the line block to restart the CSS animation.
+  const animStyle = settings.animationStyle ?? 'pop';
+  const [cycle, setCycle] = useState(0);
+  useEffect(() => {
+    if (animStyle === 'none') return;
+    const t = setInterval(() => setCycle((c) => c + 1), 2200);
+    return () => clearInterval(t);
+  }, [animStyle]);
+
   // Measure the actual frame width so the preview font size is pixel-accurate to
   // the 1080-wide rendered video (fontSize px scaled by frameWidth / 1080).
   const frameRef = useRef<HTMLDivElement>(null);
@@ -568,6 +609,7 @@ function CaptionPreview({
         style={{ background: mode === 'green' ? '#00FF00' : 'radial-gradient(120% 120% at 50% 0%, #2a2a2a 0%, #0b0b0b 100%)' }}
       />
       <div className="absolute inset-x-0 px-4" style={{ top: `${top}%`, transform: 'translateY(-50%)' }}>
+        <div key={cycle} style={{ animation: ANIM_CSS[animStyle] }}>
         <p
           className="w-full text-center leading-tight"
           style={{
@@ -595,6 +637,7 @@ function CaptionPreview({
             </span>
           ))}
         </p>
+        </div>
       </div>
     </PhoneFrame>
   );

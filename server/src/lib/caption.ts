@@ -143,7 +143,15 @@ function engineStyle(settings: CaptionSettings) {
     uppercase: settings.uppercase,
     bold: settings.fontWeight >= 700,
     maxWordsPerLine: clampWordsPerLine(settings.wordsPerLine),
-    animation: { enter: 'pop', exit: 'pop', enterDuration: 120, exitDuration: 90 }
+    animation:
+      settings.animationStyle === 'none'
+        ? { enter: 'none', exit: 'none', enterDuration: 0, exitDuration: 0 }
+        : {
+            enter: settings.animationStyle,
+            exit: settings.animationStyle,
+            enterDuration: 120,
+            exitDuration: 90
+          }
   };
 }
 

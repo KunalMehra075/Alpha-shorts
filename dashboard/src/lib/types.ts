@@ -60,6 +60,7 @@ export type CaptionSettings = {
   positionY: number; // 0 = top, 100 = bottom
   uppercase: boolean;
   wordsPerLine: number; // 2–5 words shown per caption line
+  animationStyle: 'pop' | 'fade' | 'slide' | 'none'; // how each line animates in
 };
 
 export type CaptionLine = { id: number; start: number; end: number; text: string };

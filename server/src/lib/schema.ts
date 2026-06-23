@@ -70,7 +70,10 @@ export const CaptionSettings = z.object({
   positionY: z.number().min(0).max(100).default(78),
   uppercase: z.boolean().default(true),
   // How many words show per caption line (2 = punchy, 5 = denser).
-  wordsPerLine: z.number().int().min(2).max(5).default(4)
+  wordsPerLine: z.number().int().min(2).max(5).default(4),
+  // How each caption line animates onto screen (per-line enter/exit). The line
+  // animates in once, then its words karaoke-highlight. 'none' = instant.
+  animationStyle: z.enum(['pop', 'fade', 'slide', 'none']).default('pop')
 });
 export type CaptionSettings = z.infer<typeof CaptionSettings>;
 

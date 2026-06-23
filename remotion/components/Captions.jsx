@@ -15,10 +15,43 @@ function wordsForLine(line) {
   }));
 }
 
+// Per-line enter/exit animation. Mirrors src/lib/ass-generator.js constants so
+// the final video matches the rendered overlay MP4 exactly:
+//   pop   POP_IN_SCALE 55% / POP_OUT_SCALE 90%
+//   slide SLIDE_IN_PX 40 / SLIDE_OUT_PX 30 (1920-px composition space)
+//   enter 120ms / exit 90ms.
+const ENTER = 0.12;
+const EXIT = 0.09;
+
+function lineMotion(style, elapsed, remain) {
+  const base = { scale: 1, opacity: 1, ty: 0 };
+  if (style === 'none') return base;
+  const ein = (a, b) =>
+    interpolate(elapsed, [0, ENTER], [a, b], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const eout = (a, b) =>
+    interpolate(remain, [0, EXIT], [a, b], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+
+  if (style === 'fade') {
+    if (elapsed < ENTER) return { ...base, opacity: ein(0, 1) };
+    if (remain < EXIT) return { ...base, opacity: eout(0, 1) };
+    return base;
+  }
+  if (style === 'slide') {
+    if (elapsed < ENTER) return { ...base, opacity: ein(0, 1), ty: ein(40, 0) };
+    if (remain < EXIT) return { ...base, opacity: eout(0, 1), ty: eout(-30, 0) };
+    return base;
+  }
+  // pop (default)
+  if (elapsed < ENTER) return { ...base, scale: ein(0.55, 1) };
+  if (remain < EXIT) return { ...base, scale: eout(0.9, 1) };
+  return base;
+}
+
 /**
  * Caption overlay layer for the dashboard render. Matches the Caption-step
  * overlay: per-word karaoke highlight (active word in `highlightColor`) plus a
- * pop enter/exit animation. Rendered only when the dashboard passes captions.
+ * configurable per-line enter/exit animation (pop/fade/slide/none). Rendered
+ * only when the dashboard passes captions.
  *
  * @param {{ lines: {start:number,end:number,text:string}[], settings: object }} props
  */
@@ -39,28 +72,17 @@ export const Captions = ({ lines = [], settings = {} }) => {
     strokeColor = '#000000',
     strokeWidth = 6,
     positionY = 78,
-    uppercase = true
+    uppercase = true,
+    animationStyle = 'pop'
   } = settings;
 
   const words = wordsForLine(line);
   const activeIdx = words.findIndex((w) => t >= w.start && t < w.end);
 
-  // Pop enter (55% → 100% over the first 120ms) / exit (→ 90% over last 90ms) —
-  // mirrors POP_IN_SCALE / POP_OUT_SCALE in src/lib/ass-generator.js.
+  // Per-line enter/exit animation, mirroring the ASS overlay engine.
   const elapsed = t - line.start;
   const remain = line.end - t;
-  let scale = 1;
-  if (elapsed < 0.12) {
-    scale = interpolate(elapsed, [0, 0.12], [0.55, 1], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp'
-    });
-  } else if (remain < 0.09) {
-    scale = interpolate(remain, [0, 0.09], [0.9, 1], {
-      extrapolateLeft: 'clamp',
-      extrapolateRight: 'clamp'
-    });
-  }
+  const { scale, opacity, ty } = lineMotion(animationStyle, elapsed, remain);
 
   return (
     <AbsoluteFill>
@@ -87,7 +109,8 @@ export const Captions = ({ lines = [], settings = {} }) => {
             textShadow: '0 2px 8px rgba(0,0,0,0.5)',
             textTransform: uppercase ? 'uppercase' : 'none',
             lineHeight: 1.1,
-            transform: `scale(${scale})`,
+            opacity,
+            transform: `translateY(${ty}px) scale(${scale})`,
             transformOrigin: 'center'
           }}
         >
