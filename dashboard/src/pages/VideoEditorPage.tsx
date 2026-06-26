@@ -298,6 +298,9 @@ export function VideoEditorPage() {
   // frame; read imperatively so the page doesn't re-render at 60fps) + seek.
   const timeRef = useRef(0);
   const seekRef = useRef<(s: number) => void>(() => {});
+  // Pause the transport imperatively (e.g. when the user grabs the timeline
+  // playhead/ruler so scrubbing stops playback instead of playing from there).
+  const pauseRef = useRef<() => void>(() => {});
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [tlZoom, setTlZoom] = useState(1); // timeline horizontal zoom multiplier
 
@@ -412,6 +415,7 @@ export function VideoEditorPage() {
               onScrubToScene={setSelected}
               timeRef={timeRef}
               seekRef={seekRef}
+              pauseRef={pauseRef}
               onPlayingChange={setPreviewPlaying}
             />
           </CardContent>
@@ -701,6 +705,7 @@ export function VideoEditorPage() {
         onRemoveSound={(placementId) => removePlacement.mutate(placementId)}
         timeRef={timeRef}
         seekRef={seekRef}
+        pauseRef={pauseRef}
         playing={previewPlaying}
         zoom={tlZoom}
         onZoom={setTlZoom}
@@ -1342,6 +1347,7 @@ function EditorPreview({
   onScrubToScene,
   timeRef,
   seekRef,
+  pauseRef,
   onPlayingChange
 }: {
   clips: Clip[];
@@ -1363,6 +1369,7 @@ function EditorPreview({
   onScrubToScene: (i: number) => void;
   timeRef?: React.MutableRefObject<number>;
   seekRef?: React.MutableRefObject<(s: number) => void>;
+  pauseRef?: React.MutableRefObject<() => void>;
   onPlayingChange?: (playing: boolean) => void;
 }) {
   const [time, setTime] = useState(0);
@@ -1526,6 +1533,7 @@ function EditorPreview({
   }, [time, timeRef]);
   useEffect(() => {
     if (seekRef) seekRef.current = seek;
+    if (pauseRef) pauseRef.current = () => setPlaying(false);
   });
   useEffect(() => {
     onPlayingChange?.(playing);
@@ -2186,6 +2194,7 @@ function Timeline({
   onRemoveSound,
   timeRef,
   seekRef,
+  pauseRef,
   playing,
   zoom,
   onZoom
@@ -2214,6 +2223,7 @@ function Timeline({
   onRemoveSound: (placementId: string) => void;
   timeRef: React.MutableRefObject<number>;
   seekRef: React.MutableRefObject<(s: number) => void>;
+  pauseRef: React.MutableRefObject<() => void>;
   playing: boolean;
   zoom: number;
   onZoom: (z: number) => void;
@@ -2399,6 +2409,7 @@ function Timeline({
                 style={{ height: TL_RULER_H }}
                 onPointerDown={(e) => {
                   e.preventDefault();
+                  pauseRef?.current?.(); // grabbing the ruler stops playback at the playhead
                   setScrubbing(true);
                   seek(e.clientX);
                 }}
@@ -2595,6 +2606,7 @@ function Timeline({
                   onPointerDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    pauseRef?.current?.(); // grabbing the playhead stops playback at that position
                     setScrubbing(true);
                   }}
                   className="pointer-events-auto absolute -left-[7px] top-0 size-3.5 cursor-ew-resize rounded-full border-2 border-accent bg-background"

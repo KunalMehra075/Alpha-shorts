@@ -311,7 +311,7 @@ function ElementCard({
               <MoreVertical className="size-4" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
             <DropdownMenuItem onClick={onRemoveBg}>
               <Eraser className="size-4" /> Remove background
             </DropdownMenuItem>

@@ -161,3 +161,10 @@
     transform: none;
   }
 }
+
+/* In native fullscreen the video element fills the (usually 16:9) screen; force
+   letterbox so a portrait 9:16 video isn't cropped to its center band — which
+   would hide burned-in captions near the bottom of the frame. */
+video:fullscreen {
+  object-fit: contain;
+}

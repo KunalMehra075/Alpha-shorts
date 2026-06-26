@@ -518,7 +518,7 @@ function OverlayPlayer({
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onEnded={() => setPlaying(false)}
-          className="size-full cursor-pointer object-cover"
+          className="size-full cursor-pointer object-contain"
           controls
         />
         {!playing && (
