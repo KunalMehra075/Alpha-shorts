@@ -173,8 +173,20 @@ export type SoundPlacement = {
   volume: number;
 };
 
-export type ElementKind = 'image' | 'gif' | 'video';
+export type ElementKind = 'image' | 'gif' | 'video' | 'text';
 export type ElementAnimation = 'none' | 'fade' | 'pop' | 'pulse' | 'slide';
+
+// Text overlay style (mirrors the server TextElementStyle / caption controls).
+export type TextElementStyle = {
+  fontFamily: string;
+  fontSize: number; // px in 1080×1920 frame space
+  fontWeight: number;
+  color: string;
+  strokeColor: string;
+  strokeWidth: number;
+  uppercase: boolean;
+  align: 'left' | 'center' | 'right';
+};
 
 export type ElementItem = {
   id: string;
@@ -198,17 +210,28 @@ export type BgParams = {
 export type ElementPlacement = {
   id: string;
   name: string;
-  file: string; // project-relative
+  file: string | null; // project-relative; null for text elements
   kind: ElementKind;
   layer: number;
   x: number; // center %, 0-100
   y: number; // center %, 0-100
-  size: number; // width % of frame
+  size: number; // width % of frame (text: wrap width)
   rotation: number; // degrees
   startSec: number;
   endSec: number;
   animation: ElementAnimation;
   muted: boolean; // video elements: mute/keep audio in the render
+  // text elements only:
+  text?: string;
+  textStyle?: TextElementStyle;
+};
+
+// A partial update to a placement. textStyle may be partial (merged server-side).
+export type ElementPatch = Partial<
+  Omit<ElementPlacement, 'id' | 'name' | 'file' | 'kind' | 'text' | 'textStyle'>
+> & {
+  text?: string;
+  textStyle?: Partial<TextElementStyle>;
 };
 
 export type RenderTimelinePayload = {

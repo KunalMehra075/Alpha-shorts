@@ -27,7 +27,8 @@ import {
   type RenderRecord,
   type Scene,
   type StageStatus,
-  type ProjectSummary
+  type ProjectSummary,
+  type TextElementStyle
 } from './schema';
 
 const shortId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 6);
@@ -611,7 +612,10 @@ export function addElementPlacement(id: string, rec: Manifest['elements'][number
 export function updateElementPlacement(
   id: string,
   placementId: string,
-  patch: Partial<Manifest['elements'][number]>
+  // textStyle may arrive as a partial (only changed fields) and is shallow-merged.
+  patch: Partial<Omit<Manifest['elements'][number], 'textStyle'>> & {
+    textStyle?: Partial<TextElementStyle>;
+  }
 ): Manifest['elements'] {
   const m = readManifest(id);
   const rec = m.elements.find((e) => e.id === placementId);
@@ -626,6 +630,9 @@ export function updateElementPlacement(
   if (patch.layer !== undefined) rec.layer = Math.max(0, Math.round(patch.layer));
   if (patch.animation !== undefined) rec.animation = patch.animation;
   if (patch.muted !== undefined) rec.muted = patch.muted;
+  // Text elements: update content + shallow-merge the style.
+  if (patch.text !== undefined) rec.text = patch.text;
+  if (patch.textStyle !== undefined) rec.textStyle = { ...rec.textStyle, ...patch.textStyle } as any;
   if (rec.endSec <= rec.startSec) rec.endSec = Math.round((rec.startSec + 0.5) * 100) / 100;
   m.elements.sort((a, b) => a.startSec - b.startSec);
   if (rec.layer + 1 > m.elementLayers) m.elementLayers = rec.layer + 1;
@@ -636,7 +643,7 @@ export function removeElementPlacement(id: string, placementId: string): Manifes
   const m = readManifest(id);
   const rec = m.elements.find((e) => e.id === placementId);
   if (!rec) throw new HttpError(404, `Element placement "${placementId}" not found.`);
-  removePath(join(projectDir(id), rec.file));
+  if (rec.file) removePath(join(projectDir(id), rec.file)); // text elements have no file
   m.elements = m.elements.filter((e) => e.id !== placementId);
   writeManifest(m);
   return m.elements;

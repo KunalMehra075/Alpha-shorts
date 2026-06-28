@@ -414,6 +414,18 @@ export function usePlaceElementFromLibrary(id: string) {
   });
 }
 
+export function useAddTextElement(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { layer: number; atSec: number; text?: string; durationSec?: number }) =>
+      api.createTextElement(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-elements', id] });
+      qc.invalidateQueries({ queryKey: qk.project(id) });
+    }
+  });
+}
+
 export function useUpdateElement(id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -422,7 +434,7 @@ export function useUpdateElement(id: string) {
       patch
     }: {
       placementId: string;
-      patch: Partial<import('./types').ElementPlacement>;
+      patch: import('./types').ElementPatch;
     }) => api.updateElement(id, placementId, patch),
     onSuccess: (items) => qc.setQueryData(['project-elements', id], items)
   });

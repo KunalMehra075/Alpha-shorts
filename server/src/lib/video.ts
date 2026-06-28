@@ -266,21 +266,27 @@ function buildInputProps(id: string, timeline: RenderTimeline) {
   // the total video length.
   const totalSec = from / fps;
   const elements = getElements(id)
-    .filter((p) => existsSync(join(projectDir(id), p.file)))
+    // Text elements have no file; media elements must have an existing file.
+    .filter((p) => p.kind === 'text' || (p.file && existsSync(join(projectDir(id), p.file))))
     .slice()
     .sort((a, b) => a.layer - b.layer)
-    .map((p, i) => ({
-      src: stage(join(projectDir(id), p.file), `element-${i}`),
-      kind: p.kind,
-      x: p.x,
-      y: p.y,
-      size: p.size,
-      rotation: p.rotation,
-      fromSec: Math.max(0, p.startSec),
-      toSec: Math.min(p.endSec, totalSec),
-      animation: p.animation,
-      muted: p.muted
-    }))
+    .map((p, i) => {
+      const base = {
+        kind: p.kind,
+        x: p.x,
+        y: p.y,
+        size: p.size,
+        rotation: p.rotation,
+        fromSec: Math.max(0, p.startSec),
+        toSec: Math.min(p.endSec, totalSec),
+        animation: p.animation,
+        muted: p.muted
+      };
+      if (p.kind === 'text') {
+        return { ...base, text: p.text, textStyle: p.textStyle };
+      }
+      return { ...base, src: stage(join(projectDir(id), p.file!), `element-${i}`) };
+    })
     .filter((e) => e.toSec > e.fromSec);
 
   return {

@@ -7,6 +7,7 @@ import { getDuration } from '../../../src/lib/ffmpeg.js';
 import { ensureDir, existsSync, readJsonOr, removePath, writeJson } from './fsx';
 import { ROOT, projectDir } from './paths';
 import { HttpError, addElementPlacement, elementsDir as wsElementsDir, getLibrary } from './store';
+import type { TextElementStyle } from './schema';
 
 const shortId = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 10);
 const FFMPEG_BIN = process.env.FFMPEG_BIN || 'ffmpeg';
@@ -171,7 +172,8 @@ export function placeElement(opts: { id: string; elementId: string; layer: numbe
     startSec: at,
     endSec: Math.round((at + span) * 100) / 100,
     animation: 'none' as const,
-    muted: false
+    muted: false,
+    text: ''
   };
   addElementPlacement(id, rec);
   return rec;
@@ -201,7 +203,8 @@ async function addPlacedElement(
     startSec: at,
     endSec: Math.round((at + span) * 100) / 100,
     animation: 'none' as const,
-    muted: false
+    muted: false,
+    text: ''
   };
   addElementPlacement(id, rec);
   return rec;
@@ -251,6 +254,53 @@ export async function placeLibraryItemAsElement(opts: {
   const abs = join(projectDir(id), rel);
   copyFileSync(join(projectDir(id), item.file), abs);
   return addPlacedElement(id, { pid, name: item.name, rel, kind, abs, layer, atSec });
+}
+
+// Default styling for a new text element (mirrors the caption defaults).
+const DEFAULT_TEXT_STYLE: TextElementStyle = {
+  fontFamily: 'Inter',
+  fontSize: 72,
+  fontWeight: 800,
+  color: '#FFFFFF',
+  strokeColor: '#000000',
+  strokeWidth: 0,
+  uppercase: false,
+  align: 'center'
+};
+
+// Place a text overlay on the timeline. No file — the text + style live on the
+// placement record and render via the Remotion <Elements> overlay.
+export function placeTextElement(opts: {
+  id: string;
+  text?: string;
+  textStyle?: Partial<TextElementStyle>;
+  layer: number;
+  atSec: number;
+  durationSec?: number;
+}) {
+  const { id, layer, atSec, durationSec = 3 } = opts;
+  const pid = shortId();
+  const at = Math.max(0, Math.round(atSec * 100) / 100);
+  const text = opts.text?.trim() || 'Your text';
+  const rec = {
+    id: pid,
+    name: 'Text',
+    file: null,
+    kind: 'text' as const,
+    layer: Math.max(0, Math.round(layer)),
+    x: 50,
+    y: 50,
+    size: 100, // full-width wrap; visual size is driven by textStyle.fontSize
+    rotation: 0,
+    startSec: at,
+    endSec: Math.round((at + Math.max(0.5, durationSec)) * 100) / 100,
+    animation: 'none' as const,
+    muted: false,
+    text,
+    textStyle: { ...DEFAULT_TEXT_STYLE, ...(opts.textStyle ?? {}) }
+  };
+  addElementPlacement(id, rec);
+  return rec;
 }
 
 // ── Background removal (chroma key) on the GLOBAL library ──────────────────────

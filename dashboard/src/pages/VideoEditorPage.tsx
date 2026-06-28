@@ -18,6 +18,7 @@ import {
   Shapes,
   Sparkles,
   Trash2,
+  Type,
   Upload,
   X,
   ZoomIn,
@@ -49,6 +50,7 @@ import {
   useMediaLibrary,
   useMusicFromGlobal,
   useMusicFromLibrary,
+  useAddTextElement,
   usePlaceElement,
   usePlaceElementFromLibrary,
   usePlaceSound,
@@ -81,6 +83,7 @@ import { useEditorStore, useProjectEditor } from '@/lib/editorStore';
 import type {
   CaptionSettings,
   ElementAnimation,
+  ElementPatch,
   ElementPlacement,
   RenderRecord,
   Scene,
@@ -205,6 +208,7 @@ export function VideoEditorPage() {
   const placeElement = usePlaceElement(id);
   const uploadProjectElement = useUploadProjectElement(id);
   const placeFromLibrary = usePlaceElementFromLibrary(id);
+  const addTextElement = useAddTextElement(id);
   const uploadLibrary = useUploadLibrary(id);
   const elementFileRef = useRef<HTMLInputElement>(null);
   const [elDragOver, setElDragOver] = useState(false);
@@ -272,6 +276,22 @@ export function VideoEditorPage() {
       }
     );
   };
+
+  // Add a text overlay at the playhead, then select it for editing.
+  const onAddText = () => {
+    addTextElement.mutate(
+      { layer: Math.max(0, elementLayers - 1), atSec: Math.round(timeRef.current * 100) / 100 },
+      {
+        onSuccess: (rec) => {
+          setSelectedElementId(rec.id);
+          setSelectedSoundId(null);
+          setElementSheetOpen(false);
+          toast.success('Text added — edit it in the settings panel');
+        },
+        onError: (e: any) => toast.error(String(e.message ?? e))
+      }
+    );
+  };
   const [elementSheetOpen, setElementSheetOpen] = useState(false);
   const [elementSearch, setElementSearch] = useState('');
   const [audioSheetOpen, setAudioSheetOpen] = useState(false);
@@ -287,11 +307,16 @@ export function VideoEditorPage() {
     setSelectedSoundId(sid);
     if (sid) setSelectedElementId(null);
   };
-  const moveElementTime = (pid: string, atSec: number) => {
+  // Commit a dragged element's new time AND lane (z-index) in one patch, so a
+  // simultaneous horizontal+vertical move never races two updates.
+  const moveElement = (pid: string, atSec: number, layer: number) => {
     const el = elements.find((e) => e.id === pid);
     if (!el) return;
     const dur = Math.max(0.5, el.endSec - el.startSec);
-    updateElement.mutate({ placementId: pid, patch: { startSec: atSec, endSec: atSec + dur } });
+    updateElement.mutate({
+      placementId: pid,
+      patch: { startSec: atSec, endSec: atSec + dur, layer }
+    });
   };
 
   // Shared playback clock for the timeline playhead (written by the preview each
@@ -411,6 +436,9 @@ export function VideoEditorPage() {
               onSelectElement={selectElement}
               onElementMove={(pid, x, y) => updateElement.mutate({ placementId: pid, patch: { x, y } })}
               onElementResize={(pid, size) => updateElement.mutate({ placementId: pid, patch: { size } })}
+              onElementTextResize={(pid, fontSize) =>
+                updateElement.mutate({ placementId: pid, patch: { textStyle: { fontSize } } })
+              }
               projectId={id}
               onScrubToScene={setSelected}
               timeRef={timeRef}
@@ -439,6 +467,7 @@ export function VideoEditorPage() {
             total={total}
             selected={selectedElement}
             onBrowse={() => setElementSheetOpen(true)}
+            onAddText={onAddText}
             onChange={(patch) =>
               selectedElement && updateElement.mutate({ placementId: selectedElement.id, patch })
             }
@@ -691,7 +720,7 @@ export function VideoEditorPage() {
         onSelectElement={selectElement}
         onPlaceElement={(elementId, layer, atSec) => placeElement.mutate({ elementId, layer, atSec })}
         onPlaceFromLibrary={(itemId, layer, atSec) => placeFromLibrary.mutate({ itemId, layer, atSec })}
-        onMoveElementTime={moveElementTime}
+        onMoveElement={moveElement}
         onAddElementLayer={() => addElementLayer.mutate()}
         onRemoveElementLayer={(layer) => removeElementLayer.mutate(layer)}
         onBrowseElements={() => setElementSheetOpen(true)}
@@ -923,6 +952,17 @@ export function VideoEditorPage() {
               <Upload className="size-4" />
             )}
             Upload to this project
+          </Button>
+
+          {/* Add a text overlay (pink accent) at the playhead. */}
+          <Button
+            size="sm"
+            className="w-full border border-pink-400/50 bg-pink-500/15 text-pink-700 hover:bg-pink-500/25 dark:text-pink-200"
+            disabled={addTextElement.isPending}
+            onClick={onAddText}
+          >
+            {addTextElement.isPending ? <Loader2 className="size-4 animate-spin" /> : <Type className="size-4" />}
+            Add text
           </Button>
 
           <Input
@@ -1343,6 +1383,7 @@ function EditorPreview({
   onSelectElement,
   onElementMove,
   onElementResize,
+  onElementTextResize,
   projectId,
   onScrubToScene,
   timeRef,
@@ -1365,6 +1406,7 @@ function EditorPreview({
   onSelectElement?: (id: string | null) => void;
   onElementMove?: (id: string, x: number, y: number) => void;
   onElementResize?: (id: string, size: number) => void;
+  onElementTextResize?: (id: string, fontSize: number) => void;
   projectId: string;
   onScrubToScene: (i: number) => void;
   timeRef?: React.MutableRefObject<number>;
@@ -1711,10 +1753,13 @@ function EditorPreview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elDrag?.id]);
 
-  // Resize a selected element via its bottom-right handle. Aspect ratio is locked
-  // (size only drives width %), so we derive size purely from the pointer's
-  // horizontal distance to the element's center: corner sits at center ± width/2.
-  const [elResize, setElResize] = useState<{ id: string; size: number } | null>(null);
+  // Resize a selected element via its bottom-right handle. For media (aspect
+  // locked) we derive width % from the pointer's horizontal distance to center.
+  // For TEXT the handle scales the font size proportionally (start font × drag
+  // ratio), since the box width is the wrap width, not the visual size.
+  const [elResize, setElResize] = useState<
+    { id: string; size: number; font: number; startFont: number; startHalfW: number; isText: boolean } | null
+  >(null);
   useEffect(() => {
     if (!elResize) return;
     const move = (e: PointerEvent) => {
@@ -1724,12 +1769,21 @@ function EditorPreview({
       const r = frame.getBoundingClientRect();
       const centerX = r.left + (el.x / 100) * r.width;
       const halfW = Math.abs(e.clientX - centerX);
-      const size = Math.max(3, Math.min(200, (halfW / r.width) * 200));
-      setElResize((d) => (d ? { ...d, size } : d));
+      setElResize((d) => {
+        if (!d) return d;
+        if (d.isText) {
+          const font = Math.max(8, Math.min(400, d.startFont * (halfW / Math.max(1, d.startHalfW))));
+          return { ...d, font };
+        }
+        return { ...d, size: Math.max(3, Math.min(200, (halfW / r.width) * 200)) };
+      });
     };
     const up = () => {
       setElResize((d) => {
-        if (d) onElementResize?.(d.id, Math.round(d.size * 10) / 10);
+        if (d) {
+          if (d.isText) onElementTextResize?.(d.id, Math.round(d.font));
+          else onElementResize?.(d.id, Math.round(d.size * 10) / 10);
+        }
         return null;
       });
     };
@@ -1806,11 +1860,16 @@ function EditorPreview({
             ))}
           {/* Element overlays (below captions). Selected one is draggable. */}
           {visibleElements.map((el) => {
+            const isText = el.kind === 'text';
+            const resizing = elResize && elResize.id === el.id;
             const pos = elDrag && elDrag.id === el.id ? elDrag : { x: el.x, y: el.y };
-            const liveSize = elResize && elResize.id === el.id ? elResize.size : el.size;
+            // Media: live width %. Text: width is the wrap width (unchanged by resize).
+            const liveSize = resizing && !isText ? elResize!.size : el.size;
+            const liveFont = resizing && isText ? elResize!.font : el.textStyle?.fontSize ?? 72;
             const selected = el.id === selectedElementId;
-            const busy = (elDrag && elDrag.id === el.id) || (elResize && elResize.id === el.id);
-            const src = `/media/${projectId}/${el.file}`;
+            const busy = (elDrag && elDrag.id === el.id) || resizing;
+            const src = el.file ? `/media/${projectId}/${el.file}` : '';
+            const accent = isText ? '#EC4899' : 'hsl(var(--accent))';
             // No entrance animation while actively dragging/resizing this element,
             // so positioning stays steady; otherwise mirror the render.
             const anim = busy
@@ -1833,11 +1892,34 @@ function EditorPreview({
                   transform: `translate(-50%, -50%) rotate(${el.rotation || 0}deg)${anim.extra}`,
                   opacity: anim.opacity,
                   cursor: 'move',
-                  outline: selected ? '2px solid hsl(var(--accent))' : 'none',
+                  outline: selected ? `2px solid ${accent}` : 'none',
                   outlineOffset: 2
                 }}
               >
-                {el.kind === 'video' ? (
+                {isText ? (
+                  <div
+                    className="pointer-events-none w-full"
+                    style={{
+                      fontFamily: `'${el.textStyle?.fontFamily || 'Inter'}', sans-serif`,
+                      fontSize: liveFont * scale,
+                      fontWeight: el.textStyle?.fontWeight || 800,
+                      color: el.textStyle?.color || '#FFFFFF',
+                      WebkitTextStroke:
+                        (el.textStyle?.strokeWidth || 0) > 0
+                          ? `${(el.textStyle?.strokeWidth || 0) * scale}px ${el.textStyle?.strokeColor || '#000000'}`
+                          : undefined,
+                      paintOrder: 'stroke fill',
+                      textShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                      textTransform: el.textStyle?.uppercase ? 'uppercase' : 'none',
+                      textAlign: el.textStyle?.align || 'center',
+                      lineHeight: 1.1,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word'
+                    }}
+                  >
+                    {el.text || ' '}
+                  </div>
+                ) : el.kind === 'video' ? (
                   <video
                     ref={(n) => {
                       elVideoRefs.current[el.id] = n;
@@ -1858,9 +1940,17 @@ function EditorPreview({
                       e.preventDefault();
                       e.stopPropagation();
                       onSelectElement?.(el.id);
-                      setElResize({ id: el.id, size: liveSize });
+                      const frame = frameRef.current;
+                      let startHalfW = 1;
+                      if (frame) {
+                        const r = frame.getBoundingClientRect();
+                        const centerX = r.left + (el.x / 100) * r.width;
+                        startHalfW = Math.max(1, Math.abs(e.clientX - centerX));
+                      }
+                      const startFont = el.textStyle?.fontSize ?? 72;
+                      setElResize({ id: el.id, size: liveSize, font: startFont, startFont, startHalfW, isText });
                     }}
-                    title="Drag to resize"
+                    title={isText ? 'Drag to scale text' : 'Drag to resize'}
                     style={{
                       position: 'absolute',
                       right: -6,
@@ -1868,7 +1958,7 @@ function EditorPreview({
                       width: 12,
                       height: 12,
                       borderRadius: 9999,
-                      background: 'hsl(var(--accent))',
+                      background: accent,
                       border: '2px solid white',
                       boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
                       cursor: 'nwse-resize'
@@ -2180,7 +2270,7 @@ function Timeline({
   onSelectElement,
   onPlaceElement,
   onPlaceFromLibrary,
-  onMoveElementTime,
+  onMoveElement,
   onAddElementLayer,
   onRemoveElementLayer,
   onBrowseElements,
@@ -2209,7 +2299,7 @@ function Timeline({
   onSelectElement: (id: string | null) => void;
   onPlaceElement: (elementId: string, layer: number, atSec: number) => void;
   onPlaceFromLibrary: (itemId: string, layer: number, atSec: number) => void;
-  onMoveElementTime: (placementId: string, atSec: number) => void;
+  onMoveElement: (placementId: string, atSec: number, layer: number) => void;
   onAddElementLayer: () => void;
   onRemoveElementLayer: (layer: number) => void;
   onBrowseElements: () => void;
@@ -2294,23 +2384,40 @@ function Timeline({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrubbing, pxPerSec]);
 
-  // Block time-drag (elements + sounds) with click-vs-drag detection.
+  // Block time-drag (elements + sounds) with click-vs-drag detection. Elements
+  // can also be dragged vertically between lanes to change their z-index (layer).
   const [drag, setDrag] = useState<{ kind: 'element' | 'sound'; id: string } | null>(null);
   const [dragAt, setDragAt] = useState(0);
+  const [dragLayer, setDragLayer] = useState<number | null>(null);
   const movedRef = useRef(false);
   const selElRef = useRef(selectedElementId);
   selElRef.current = selectedElementId;
+  const lanesRef = useRef<HTMLDivElement>(null);
+
+  // Which element lane (layer) sits under a given screen Y. Lanes are stacked
+  // top→bottom in `laneOrder` (front-most first); each row is TL_ELEM_LANE_H tall
+  // with a 4px gap. Clamped so dragging past the edges snaps to the end lanes.
+  const layerAtY = (clientY: number): number => {
+    const box = lanesRef.current;
+    if (!box) return 0;
+    const r = box.getBoundingClientRect();
+    const idx = Math.floor((clientY - r.top) / (TL_ELEM_LANE_H + 4));
+    const clamped = Math.max(0, Math.min(elementLayers - 1, idx));
+    return elementLayers - 1 - clamped; // laneOrder[clamped]
+  };
+
   useEffect(() => {
     if (!drag) return;
     const move = (e: PointerEvent) => {
       movedRef.current = true;
       setDragAt(xToSec(e.clientX));
+      if (drag.kind === 'element') setDragLayer(layerAtY(e.clientY));
     };
     const up = (e: PointerEvent) => {
       const at = xToSec(e.clientX);
       if (drag.kind === 'element') {
         if (movedRef.current) {
-          onMoveElementTime(drag.id, at);
+          onMoveElement(drag.id, at, layerAtY(e.clientY));
           onSelectElement(drag.id);
         } else {
           onSelectElement(selElRef.current === drag.id ? null : drag.id);
@@ -2320,6 +2427,7 @@ function Timeline({
         onSelectSound(drag.id);
       }
       setDrag(null);
+      setDragLayer(null);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -2328,7 +2436,7 @@ function Timeline({
       window.removeEventListener('pointerup', up);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag, pxPerSec]);
+  }, [drag, pxPerSec, elementLayers]);
 
   const step = pickTickStep(pxPerSec);
   const ticks: number[] = [];
@@ -2427,9 +2535,14 @@ function Timeline({
               </div>
 
               {/* Element lanes */}
-              <div className="flex flex-col gap-1" style={{ marginTop: TL_TRACK_GAP }}>
+              <div ref={lanesRef} className="flex flex-col gap-1" style={{ marginTop: TL_TRACK_GAP }}>
                 {laneOrder.map((layer) => {
-                  const laneEls = elements.filter((e) => e.layer === layer);
+                  // While an element is being dragged, show it in the lane under the
+                  // pointer (its target z-index) instead of its original lane.
+                  const draggingId = drag?.kind === 'element' ? drag.id : null;
+                  const dragged = draggingId ? elements.find((e) => e.id === draggingId) ?? null : null;
+                  let laneEls = elements.filter((e) => e.layer === layer && e.id !== draggingId);
+                  if (dragged && dragLayer === layer) laneEls = [...laneEls, dragged];
                   const empty = laneEls.length === 0;
                   return (
                     <div
@@ -2479,18 +2592,34 @@ function Timeline({
                               movedRef.current = false;
                               setDrag({ kind: 'element', id: el.id });
                               setDragAt(el.startSec);
+                              setDragLayer(el.layer);
                             }}
-                            title={`${el.name} · ${start.toFixed(1)}–${(start + dur).toFixed(1)}s`}
+                            title={`${el.name} · ${start.toFixed(1)}–${(start + dur).toFixed(1)}s · L${el.layer + 1}`}
                             style={{ left: secToX(start), width: Math.max(10, secToW(dur)) }}
                             className={cn(
                               'absolute bottom-0.5 top-0.5 z-[5] flex cursor-grab items-center gap-1 overflow-hidden rounded border px-1 text-[9px] active:cursor-grabbing',
-                              selectedElementId === el.id
-                                ? 'border-sky-400 bg-sky-500/30 ring-1 ring-sky-400'
-                                : 'border-sky-500/40 bg-sky-500/15'
+                              el.kind === 'text'
+                                ? selectedElementId === el.id
+                                  ? 'border-pink-400 bg-pink-500/30 ring-1 ring-pink-400'
+                                  : 'border-pink-500/40 bg-pink-500/15'
+                                : selectedElementId === el.id
+                                  ? 'border-sky-400 bg-sky-500/30 ring-1 ring-sky-400'
+                                  : 'border-sky-500/40 bg-sky-500/15'
                             )}
                           >
-                            <Shapes className="size-2.5 shrink-0 text-sky-600 dark:text-sky-300" />
-                            <span className="truncate text-sky-800 dark:text-sky-50">{el.name}</span>
+                            {el.kind === 'text' ? (
+                              <>
+                                <Type className="size-2.5 shrink-0 text-pink-600 dark:text-pink-300" />
+                                <span className="truncate text-pink-800 dark:text-pink-50">
+                                  {el.text || el.name}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <Shapes className="size-2.5 shrink-0 text-sky-600 dark:text-sky-300" />
+                                <span className="truncate text-sky-800 dark:text-sky-50">{el.name}</span>
+                              </>
+                            )}
                           </div>
                         );
                       })}
@@ -2658,39 +2787,13 @@ function parseNum(v: string, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-// A labelled row laid out as two columns — a fixed heading column on the left
-// and a control column on the right — so controls across rows line up cleanly.
-function SettingRow({
-  label,
-  first,
-  children
-}: {
-  label: string;
-  first?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className={cn(
-        'grid grid-cols-[84px_1fr] items-center gap-3 px-4 py-3',
-        !first && 'border-t border-border/60'
-      )}
-    >
-      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
 // Two of these sit side-by-side in a single row (heading + control each), used
 // for the compact Size/Rotate and Animation/Audio pairs.
 function HalfRow({ first, children }: { first?: boolean; children: React.ReactNode }) {
   return (
     <div
       className={cn(
-        'grid grid-cols-2 gap-4 px-4 py-3',
+        'grid grid-cols-2 gap-3 px-3 py-1.5',
         !first && 'border-t border-border/60'
       )}
     >
@@ -2707,6 +2810,48 @@ function InlineSetting({ label, children }: { label: string; children: React.Rea
       </span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
+  );
+}
+
+// Three controls side-by-side in one row (used for the text style triples).
+function ThirdRow({ first, children }: { first?: boolean; children: React.ReactNode }) {
+  return (
+    <div className={cn('grid grid-cols-3 gap-2 px-3 py-1.5', !first && 'border-t border-border/60')}>
+      {children}
+    </div>
+  );
+}
+
+// Four controls side-by-side in one row (the most compact text style rows).
+function QuadRow({ first, children }: { first?: boolean; children: React.ReactNode }) {
+  return (
+    <div className={cn('grid grid-cols-4 gap-1.5 px-3 py-1.5', !first && 'border-t border-border/60')}>
+      {children}
+    </div>
+  );
+}
+
+// A compact stacked field — tiny label above the control — so three fit per row.
+function StackField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid min-w-0 gap-1">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+// A compact, full-width color swatch (click to open the native picker). Sized to
+// fit a narrow one-quarter column.
+function ColorMini({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <input
+      type="color"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      title={value.toUpperCase()}
+      className="h-8 w-full cursor-pointer rounded-md border border-input bg-background p-0.5"
+    />
   );
 }
 
@@ -2755,30 +2900,47 @@ function NumField({
   );
 }
 
+// Fonts available for text elements (mirrors the Caption Maker's list).
+const TEXT_FONTS = ['Inter', 'Arial', 'Impact', 'Montserrat', 'Poppins', 'Bebas Neue', 'Noto Sans Devanagari'];
+
 function ElementInspector({
   total,
   selected,
   onBrowse,
+  onAddText,
   onChange,
   onRemove
 }: {
   total: number;
   selected: ElementPlacement | null;
   onBrowse: () => void;
-  onChange: (patch: Partial<ElementPlacement>) => void;
+  onAddText: () => void;
+  onChange: (patch: ElementPatch) => void;
   onRemove: () => void;
 }) {
   const wholeVideo = !!selected && selected.startSec <= 0.05 && selected.endSec >= total - 0.05;
   const isImage = selected?.kind === 'image';
+  const isText = selected?.kind === 'text';
+  const ts = selected?.textStyle;
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-3 p-5">
-        <div className="flex items-center justify-between">
+      <CardContent className="flex flex-col gap-2.5 p-4">
+        <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-semibold">Element settings</span>
-          <Button variant="outline" size="sm" onClick={onBrowse}>
-            <Plus className="size-4" /> Add element
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onAddText}
+              className="border-pink-400/50 bg-pink-500/10 text-pink-700 hover:bg-pink-500/20 dark:text-pink-200"
+            >
+              <Type className="size-4" /> Add text
+            </Button>
+            <Button variant="outline" size="sm" onClick={onBrowse}>
+              <Plus className="size-4" /> Add element
+            </Button>
+          </div>
         </div>
 
         {!selected ? (
@@ -2789,7 +2951,7 @@ function ElementInspector({
           // key by id so in-progress field drafts reset cleanly when the
           // selection changes.
           <div key={selected.id} className="overflow-hidden rounded-xl border border-border">
-            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/30 px-4 py-3">
+            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/30 px-3 py-1.5">
               <span className="truncate text-sm font-medium" title={selected.name}>
                 {selected.name}
               </span>
@@ -2802,61 +2964,65 @@ function ElementInspector({
               </button>
             </div>
 
-            <SettingRow label="Position" first>
-              <div className="grid grid-cols-2 gap-2.5">
-                <NumField label="x" value={selected.x} suffix="%" onCommit={(v) => onChange({ x: v })} />
-                <NumField label="y" value={selected.y} suffix="%" onCommit={(v) => onChange({ y: v })} />
-              </div>
-            </SettingRow>
-
-            <SettingRow label="Duration">
-              <div className="flex items-center gap-2.5">
-                <div className="flex-1">
-                  <NumField
-                    label="start"
-                    value={selected.startSec}
-                    step={0.1}
-                    suffix="s"
-                    disabled={isImage && wholeVideo}
-                    onCommit={(v) => onChange({ startSec: Math.max(0, v) })}
-                  />
-                </div>
-                <div className="flex-1">
-                  <NumField
-                    label="end"
-                    value={selected.endSec}
-                    step={0.1}
-                    suffix="s"
-                    disabled={isImage && wholeVideo}
-                    onCommit={(v) => onChange({ endSec: v })}
-                  />
-                </div>
-                {/* "Full length" only makes sense for static images — videos/gifs
-                    already default to their own native duration. */}
-                {isImage && (
-                  <label className="flex shrink-0 items-center gap-2 text-sm" title="Span the whole video">
-                    <Switch
-                      checked={wholeVideo}
-                      onCheckedChange={(on) =>
-                        on
-                          ? onChange({ startSec: 0, endSec: Math.max(0.5, total) })
-                          : onChange({ endSec: Math.min(selected.startSec + 3, total) })
-                      }
-                    />
-                    <span className="text-xs text-muted-foreground">full</span>
-                  </label>
-                )}
-              </div>
-            </SettingRow>
-
-            <HalfRow>
-              <InlineSetting label="Size">
-                <NumField label="" value={selected.size} suffix="%" onCommit={(v) => onChange({ size: v })} />
-              </InlineSetting>
-              <InlineSetting label="Rotate">
+            {/* Media (image/gif/video) transform + timing. */}
+            {!isText && (
+              <>
+            <ThirdRow first>
+              <StackField label="X">
+                <NumField label="" value={selected.x} suffix="%" onCommit={(v) => onChange({ x: v })} />
+              </StackField>
+              <StackField label="Y">
+                <NumField label="" value={selected.y} suffix="%" onCommit={(v) => onChange({ y: v })} />
+              </StackField>
+              <StackField label="Rotate">
                 <NumField label="" value={selected.rotation} suffix="°" onCommit={(v) => onChange({ rotation: v })} />
-              </InlineSetting>
-            </HalfRow>
+              </StackField>
+            </ThirdRow>
+
+            {/* Duration Start · End · Width */}
+            <ThirdRow>
+              <StackField label="Start">
+                <NumField
+                  label=""
+                  value={selected.startSec}
+                  step={0.1}
+                  suffix="s"
+                  disabled={isImage && wholeVideo}
+                  onCommit={(v) => onChange({ startSec: Math.max(0, v) })}
+                />
+              </StackField>
+              <StackField label="End">
+                <NumField
+                  label=""
+                  value={selected.endSec}
+                  step={0.1}
+                  suffix="s"
+                  disabled={isImage && wholeVideo}
+                  onCommit={(v) => onChange({ endSec: v })}
+                />
+              </StackField>
+              <StackField label="Size">
+                <NumField label="" value={selected.size} suffix="%" onCommit={(v) => onChange({ size: v })} />
+              </StackField>
+            </ThirdRow>
+
+            {/* "Full length" only makes sense for static images — videos/gifs
+                already default to their own native duration. */}
+            {isImage && (
+              <div className="flex items-center justify-end gap-2 border-t border-border/60 px-3 py-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Full length
+                </span>
+                <Switch
+                  checked={wholeVideo}
+                  onCheckedChange={(on) =>
+                    on
+                      ? onChange({ startSec: 0, endSec: Math.max(0.5, total) })
+                      : onChange({ endSec: Math.min(selected.startSec + 3, total) })
+                  }
+                />
+              </div>
+            )}
 
             <HalfRow>
               <InlineSetting label="Animation">
@@ -2881,6 +3047,137 @@ function ElementInspector({
                 </InlineSetting>
               )}
             </HalfRow>
+              </>
+            )}
+
+            {/* Text element — ultra-compact 4-per-row (pink accent). */}
+            {isText && (
+              <>
+                {/* X · Y · Rotate · Align */}
+                <QuadRow first>
+                  <StackField label="X">
+                    <NumField label="" value={selected.x} suffix="%" onCommit={(v) => onChange({ x: v })} />
+                  </StackField>
+                  <StackField label="Y">
+                    <NumField label="" value={selected.y} suffix="%" onCommit={(v) => onChange({ y: v })} />
+                  </StackField>
+                  <StackField label="Rotate">
+                    <NumField label="" value={selected.rotation} suffix="°" onCommit={(v) => onChange({ rotation: v })} />
+                  </StackField>
+                  <StackField label="Align">
+                    <Select
+                      value={ts?.align ?? 'center'}
+                      onChange={(e) => onChange({ textStyle: { align: e.target.value as 'left' | 'center' | 'right' } })}
+                      className="h-8 w-full min-w-0"
+                    >
+                      <option value="left">Left</option>
+                      <option value="center">Center</option>
+                      <option value="right">Right</option>
+                    </Select>
+                  </StackField>
+                </QuadRow>
+
+                {/* Start · End · Size · Width */}
+                <QuadRow>
+                  <StackField label="Start">
+                    <NumField
+                      label=""
+                      value={selected.startSec}
+                      step={0.1}
+                      suffix="s"
+                      onCommit={(v) => onChange({ startSec: Math.max(0, v) })}
+                    />
+                  </StackField>
+                  <StackField label="End">
+                    <NumField label="" value={selected.endSec} step={0.1} suffix="s" onCommit={(v) => onChange({ endSec: v })} />
+                  </StackField>
+                  <StackField label="Size">
+                    <NumField
+                      label=""
+                      value={ts?.fontSize ?? 72}
+                      suffix="px"
+                      onCommit={(v) => onChange({ textStyle: { fontSize: Math.max(8, v) } })}
+                    />
+                  </StackField>
+                  <StackField label="Width">
+                    <NumField label="" value={selected.size} suffix="%" onCommit={(v) => onChange({ size: v })} />
+                  </StackField>
+                </QuadRow>
+
+                {/* Color · Stroke · Stroke w · Animation */}
+                <QuadRow>
+                  <StackField label="Color">
+                    <ColorMini value={ts?.color ?? '#FFFFFF'} onChange={(v) => onChange({ textStyle: { color: v } })} />
+                  </StackField>
+                  <StackField label="Stroke">
+                    <ColorMini
+                      value={ts?.strokeColor ?? '#000000'}
+                      onChange={(v) => onChange({ textStyle: { strokeColor: v } })}
+                    />
+                  </StackField>
+                  <StackField label="Stroke w">
+                    <NumField
+                      label=""
+                      value={ts?.strokeWidth ?? 0}
+                      suffix="px"
+                      onCommit={(v) => onChange({ textStyle: { strokeWidth: Math.max(0, v) } })}
+                    />
+                  </StackField>
+                  <StackField label="Anim">
+                    <Select
+                      value={selected.animation}
+                      onChange={(e) => onChange({ animation: e.target.value as ElementAnimation })}
+                      className="h-8 w-full min-w-0"
+                    >
+                      <option value="none">None</option>
+                      <option value="fade">Fade</option>
+                      <option value="pop">Pop</option>
+                      <option value="pulse">Pulse</option>
+                      <option value="slide">Slide</option>
+                    </Select>
+                  </StackField>
+                </QuadRow>
+
+                {/* Text · Font · Weight */}
+                <div className="grid grid-cols-[1.5fr_1fr_0.8fr] gap-2 border-t border-border/60 px-3 py-1.5">
+                  <StackField label="Text">
+                    <textarea
+                      value={selected.text ?? ''}
+                      onChange={(e) => onChange({ text: e.target.value })}
+                      rows={1}
+                      placeholder="Your text"
+                      className="block h-8 w-full resize-y rounded-md border border-input bg-background px-2 py-1 text-sm leading-tight outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </StackField>
+                  <StackField label="Font">
+                    <Select
+                      value={ts?.fontFamily ?? 'Inter'}
+                      onChange={(e) => onChange({ textStyle: { fontFamily: e.target.value } })}
+                      className="h-8 w-full min-w-0"
+                    >
+                      {TEXT_FONTS.map((f) => (
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
+                      ))}
+                    </Select>
+                  </StackField>
+                  <StackField label="Weight">
+                    <Select
+                      value={String(ts?.fontWeight ?? 800)}
+                      onChange={(e) => onChange({ textStyle: { fontWeight: Number(e.target.value) } })}
+                      className="h-8 w-full min-w-0"
+                    >
+                      {[400, 500, 600, 700, 800, 900].map((w) => (
+                        <option key={w} value={w}>
+                          {w}
+                        </option>
+                      ))}
+                    </Select>
+                  </StackField>
+                </div>
+              </>
+            )}
           </div>
         )}
       </CardContent>

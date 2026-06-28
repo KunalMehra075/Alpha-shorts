@@ -24,6 +24,7 @@ import type {
   SoundItem,
   SoundPlacement,
   ElementItem,
+  ElementPatch,
   ElementPlacement,
   UploadMeta,
   YoutubeState,
@@ -329,7 +330,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ itemId, layer, atSec })
     }),
-  updateElement: (id: string, placementId: string, patch: Partial<Omit<ElementPlacement, 'id' | 'name' | 'file' | 'kind'>>) =>
+  // Add a text overlay element onto the timeline.
+  createTextElement: (
+    id: string,
+    body: { layer: number; atSec: number; text?: string; durationSec?: number }
+  ) =>
+    request<ElementPlacement>(`/projects/${id}/video/elements/text`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+  updateElement: (id: string, placementId: string, patch: ElementPatch) =>
     request<ElementPlacement[]>(`/projects/${id}/video/elements/${placementId}`, {
       method: 'PUT',
       body: JSON.stringify(patch)

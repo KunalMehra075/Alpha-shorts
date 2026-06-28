@@ -15,7 +15,12 @@ import {
   updateSoundPlacement
 } from '../lib/store';
 import { placeSound } from '../lib/sounds';
-import { placeElement, placeLibraryItemAsElement, placeUploadedElement } from '../lib/elements';
+import {
+  placeElement,
+  placeLibraryItemAsElement,
+  placeTextElement,
+  placeUploadedElement
+} from '../lib/elements';
 import {
   clearMusic,
   getRenderStatus,
@@ -77,6 +82,16 @@ const ElementFromLibraryBody = z.object({
   layer: z.number().int().min(0).default(0),
   atSec: z.number().min(0).default(0)
 });
+const TextElementStylePatch = z.object({
+  fontFamily: z.string().optional(),
+  fontSize: z.number().optional(),
+  fontWeight: z.number().optional(),
+  color: z.string().optional(),
+  strokeColor: z.string().optional(),
+  strokeWidth: z.number().optional(),
+  uppercase: z.boolean().optional(),
+  align: z.enum(['left', 'center', 'right']).optional()
+});
 const ElementPatch = z.object({
   x: z.number().optional(),
   y: z.number().optional(),
@@ -86,7 +101,17 @@ const ElementPatch = z.object({
   endSec: z.number().min(0).optional(),
   layer: z.number().int().min(0).optional(),
   animation: z.enum(['none', 'fade', 'pop', 'pulse', 'slide']).optional(),
-  muted: z.boolean().optional()
+  muted: z.boolean().optional(),
+  // text elements
+  text: z.string().optional(),
+  textStyle: TextElementStylePatch.optional()
+});
+const TextPlaceBody = z.object({
+  text: z.string().optional(),
+  layer: z.number().int().min(0).default(0),
+  atSec: z.number().min(0).default(0),
+  durationSec: z.number().min(0.5).optional(),
+  textStyle: TextElementStylePatch.optional()
 });
 
 // GET all render records (with live progress overlaid).
@@ -225,6 +250,24 @@ videoRouter.post(
     res
       .status(201)
       .json(await placeLibraryItemAsElement({ id: pid(req), itemId: body.itemId, layer: body.layer, atSec: body.atSec }));
+  })
+);
+
+// POST add a text overlay element onto the timeline (no file).
+videoRouter.post(
+  '/elements/text',
+  ah((req, res) => {
+    const body = TextPlaceBody.parse(req.body);
+    res.status(201).json(
+      placeTextElement({
+        id: pid(req),
+        text: body.text,
+        textStyle: body.textStyle,
+        layer: body.layer,
+        atSec: body.atSec,
+        durationSec: body.durationSec
+      })
+    );
   })
 );
 

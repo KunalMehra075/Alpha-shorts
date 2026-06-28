@@ -12,9 +12,38 @@ import {
 } from 'remotion';
 import { Gif } from '@remotion/gif';
 
+// A styled text element. Mirrors the caption span CSS (fontFamily, stroke via
+// WebkitTextStroke + paintOrder, weight, transform) so the editor preview and
+// this render match. fontSize is absolute in 1080×1920 frame space.
+const ElementText = ({ el }) => {
+  const s = el.textStyle || {};
+  return (
+    <div
+      style={{
+        width: '100%',
+        fontFamily: `'${s.fontFamily || 'Inter'}', sans-serif`,
+        fontSize: s.fontSize || 72,
+        fontWeight: s.fontWeight || 800,
+        color: s.color || '#FFFFFF',
+        WebkitTextStroke: s.strokeWidth > 0 ? `${s.strokeWidth}px ${s.strokeColor || '#000000'}` : undefined,
+        paintOrder: 'stroke fill',
+        textShadow: '0 2px 8px rgba(0,0,0,0.5)',
+        textTransform: s.uppercase ? 'uppercase' : 'none',
+        textAlign: s.align || 'center',
+        lineHeight: 1.1,
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word'
+      }}
+    >
+      {el.text}
+    </div>
+  );
+};
+
 // The element's media, sized to the wrapper width (height keeps native aspect).
 const ElementMedia = ({ el }) => {
   const style = { width: '100%', height: 'auto', display: 'block' };
+  if (el.kind === 'text') return <ElementText el={el} />;
   if (el.kind === 'gif') return <Gif src={staticFile(el.src)} fit="contain" style={style} />;
   // `transparent` extracts frames as PNG (not JPEG) so the keyed alpha channel
   // survives — without it the transparent areas composite onto black.

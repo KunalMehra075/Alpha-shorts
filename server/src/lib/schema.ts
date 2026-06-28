@@ -161,20 +161,38 @@ export type SoundPlacement = z.infer<typeof SoundPlacement>;
 // A visual overlay element placed on the video timeline (image/gif/video copied
 // into the project from the global Elements library). x/y are the element CENTER
 // as a percentage of the frame; size is the width as a percentage of frame width.
+// Text overlay style — mirrors the caption styling controls so a text element
+// looks the same in the editor preview and the Remotion render.
+export const TextElementStyle = z.object({
+  fontFamily: z.string().default('Inter'),
+  fontSize: z.number().default(72), // px in 1080×1920 frame space
+  fontWeight: z.number().default(800),
+  color: z.string().default('#FFFFFF'),
+  strokeColor: z.string().default('#000000'),
+  strokeWidth: z.number().default(0),
+  uppercase: z.boolean().default(false),
+  align: z.enum(['left', 'center', 'right']).default('center')
+});
+export type TextElementStyle = z.infer<typeof TextElementStyle>;
+
 export const ElementPlacement = z.object({
   id: z.string(),
   name: z.string().default(''),
-  file: z.string(), // project-relative, e.g. 'elements/<id>.png'
-  kind: z.enum(['image', 'gif', 'video']).default('image'),
+  // project-relative file (e.g. 'elements/<id>.png'); null for text elements.
+  file: z.string().nullable().default(null),
+  kind: z.enum(['image', 'gif', 'video', 'text']).default('image'),
   layer: z.number().int().default(0), // lane index; higher = front-most
   x: z.number().default(50), // center %, 0-100
   y: z.number().default(50), // center %, 0-100
-  size: z.number().default(30), // width % of frame
+  size: z.number().default(30), // width % of frame (text: wrap width, default 100)
   rotation: z.number().default(0), // degrees
   startSec: z.number().default(0),
   endSec: z.number().default(0),
   animation: z.enum(['none', 'fade', 'pop', 'pulse', 'slide']).default('none'),
-  muted: z.boolean().default(false) // video elements: keep audio by default; toggle to mute
+  muted: z.boolean().default(false), // video elements: keep audio by default; toggle to mute
+  // Text elements only:
+  text: z.string().default(''),
+  textStyle: TextElementStyle.optional()
 });
 export type ElementPlacement = z.infer<typeof ElementPlacement>;
 
